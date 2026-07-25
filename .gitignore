@@ -35,3 +35,17 @@ Thumbs.db
 .tmp/
 tmp/
 .cache/
+
+# Local image datasets and generated benchmark artifacts
+# Keep the directory markers and documentation so a fresh clone has the expected layout.
+data/images/**
+!data/images/.gitkeep
+data/benchmark/**
+!data/benchmark/.gitkeep
+data/samples/**
+!data/samples/.gitkeep
+data/manifest.local.csv
+output/**
+!output/.gitkeep
+results/**
+!results/.gitkeep
