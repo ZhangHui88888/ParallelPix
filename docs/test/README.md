@@ -6,6 +6,9 @@
 |------|------|------|
 | [M1本地性能仪表板测试.md](./M1本地性能仪表板测试.md) | M1 本地性能仪表板 UI | 已通过 |
 | [M2 CLI Controller与任务编排测试.md](./M2%20CLI%20Controller与任务编排测试.md) | M2 CLI Controller 与任务编排 | 已通过 |
+| [M3图片数据IO测试.md](./M3图片数据IO测试.md) | M3 图片数据 I/O | 已通过 |
+| [M4公共处理模型与Sequential测试.md](./M4公共处理模型与Sequential测试.md) | M4 公共处理模型与 Sequential | 已通过 |
+| [M7验证与Benchmark测试.md](./M7验证与Benchmark测试.md) | M7 验证、统计、报告与 Benchmark Core | 已通过 |
 
 ## 模块测试文档模板
 

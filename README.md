@@ -4,18 +4,20 @@
 
 ## 构建与运行
 
-### M2 C++ CLI
+### C++ CLI、M3/M4 与 M7 Benchmark
 
-在 Visual Studio 2022 Developer PowerShell 中执行：
+项目通过 vcpkg manifest 固定 OpenCV 的 JPEG/PNG 最小依赖。先安装或使用 Visual Studio 2022 自带的 vcpkg，并在 Visual Studio 2022 Developer PowerShell 中执行：
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Debug
-ctest --test-dir build -C Debug --output-on-failure
-.\build\Debug\parallelpix.exe --help
+$env:VCPKG_ROOT = "<vcpkg-root>"
+cmake -S . -B build/m7 -G "Visual Studio 17 2022" -A x64 `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake --build build/m7 --config Debug
+ctest --test-dir build/m7 -C Debug --output-on-failure
+.\build\m7\Debug\parallelpix.exe --help
 ```
 
-当前可执行文件只包含 M2 Controller。它可以完整解析和校验 M1 命令、构建实验矩阵并输出稳定日志和退出码；M3～M7 尚未链接，因此合法 Benchmark 请求会返回 70，不生成或伪造 CSV。
+构建会生成 M2 CLI、M3 图片 I/O、M4 Sequential、M7 Benchmark 静态库及对应测试。Sequential 已接入真实 Pipeline，可执行预热、正式测量、PNG 验证、统计并写入 M1 所需的 27 列 CSV。OpenMP/CUDA 尚未实现；混合请求会保留 Sequential 结果、跳过不可用后端并返回部分成功。
 
 ### M1 本地仪表板
 
@@ -27,7 +29,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m streamlit run tools/dashboard.py
 ```
 
-默认进入明确标记的 Demo 模式，不需要已编译的 C++ CLI。切换到 `Local CLI` 后，页面会按 [M1 设计契约](docs/design/M1本地性能仪表板设计.md) 启动 M2。
+默认进入明确标记的 Demo 模式，不需要已编译的 C++ CLI。切换到 `Local CLI` 后，页面会按 [M1 设计契约](docs/design/M1本地性能仪表板设计.md) 启动 M2/M7 真实 Benchmark。
 
 Windows 下也可以直接双击根目录的 `start_dashboard.bat`：脚本会创建或复用 `.venv`、修复失效的 Python 3.12 虚拟环境、安装固定版本依赖并启动页面。只检查和修复运行环境而不启动页面时，可执行：
 
@@ -49,13 +51,60 @@ Windows 下也可以直接双击根目录的 `start_dashboard.bat`：脚本会�
 - **核心模块**：M1 本地仪表板、M2 CLI Controller、M3 图片 I/O、M4 Sequential、M5 OpenMP、M6 CUDA、M7 验证与 Benchmark
 - **详细设计**：见 [`docs/tech/技术架构文档.md`](docs/tech/技术架构文档.md)
 
+```mermaid
+flowchart LR
+    M1["M1 本地仪表板"] --> M2["M2 CLI Controller"]
+    M2 --> M3["M3 图片 I/O"]
+    M3 --> B{"处理后端"}
+    B --> M4["M4 Sequential"]
+    B --> M5["M5 OpenMP"]
+    B --> M6["M6 CUDA"]
+    M4 --> M7["M7 验证与 Benchmark"]
+    M5 --> M7
+    M6 --> M7
+    M7 --> R["结果 CSV"]
+    R --> M1
+```
+
+若 Markdown 阅读器不渲染 Mermaid，可直接阅读下方的文本版流程图。
+
+```text
+M1 本地性能仪表板
+        │ 启动 Benchmark、展示结果
+        ▼
+M2 CLI Controller 与任务编排
+        │ 解析参数、生成实验计划
+        ▼
+M3 图片数据 I/O
+        │ 读取、校验、解码图片
+        ▼
+┌───────────────────────────────────────────┐
+│                 处理后端                  │
+│  M4 Sequential  │  M5 OpenMP  │  M6 CUDA │
+└────────┬────────┴────────┬────────┴───────┘
+         │                 │
+         └────────┬────────┘
+                  ▼
+       M7 验证、统计与 Benchmark
+                  │ 生成结果 CSV
+                  ▼
+             results/*.csv
+                  │ 读取并绘制图表
+                  └──────────────────────► M1 本地性能仪表板
+```
+
+这是打开 Markdown 文件即可阅读的系统总览；图片处理步骤、后端调用细节、数据字段和异常分支见[技术架构文档](docs/tech/技术架构文档.md)。
+
 ## 目录结构与模块映射
 
 ### 先看结论
 
 - **M1 本地性能仪表板**：全部 Python 页面代码在 `tools/parallelpix_dashboard/`；启动入口是 `tools/dashboard.py`。
 - **M2 CLI Controller**：按 `cli`、`planning`、`controller`、`pipeline` 四个子模块拆分；实现位于 `src/`，公共接口位于 `include/parallelpix/`。
-- **M3～M7**：目录骨架已就位，但尚未实现、也尚未接入 CMake；`output/`、`results/` 和 `data/` 仍只保存本地数据或产物，不包含模块实现。
+- **M3 图片数据 I/O**：已作为独立 `parallelpix_io` 库实现并由 M7 真实 Pipeline 调用。
+- **M4 Sequential**：公共像素语义和单线程后端已实现并注册到 M7。
+- **M7 Benchmark Core**：已完成预检、预热、计时、PNG 验证、统计、原子 CSV 和后端降级。
+- **M5～M6**：目录骨架已就位，待实现并注册到 M7 执行器契约。
 
 ### 当前实际目录
 
@@ -63,35 +112,36 @@ Windows 下也可以直接双击根目录的 `start_dashboard.bat`：脚本会�
 
 ```text
 ParallelPix/
-├── CMakeLists.txt                  # C++17 构建、M2 可执行程序和 C++ 测试注册
+├── CMakeLists.txt                  # C++17 构建、M2～M7 目标和 C++ 测试注册
 ├── requirements.txt                # M1 运行依赖
 ├── requirements-dev.txt            # M1 测试依赖
 ├── start_dashboard.bat             # Windows 下创建环境并启动 M1
 ├── include/
-│   └── parallelpix/                # M2 公共 C++ 接口
+│   └── parallelpix/                # 公共 C++ 接口
 │       ├── cli/cli.hpp             # 命令行请求、后端和 CSV 模型
 │       ├── planning/benchmark_plan.hpp # 实验计划与单项实验模型
 │       ├── controller/controller.hpp # Controller、日志与退出码接口
 │       ├── pipeline/pipeline_factory.hpp # Pipeline 创建接口
-│       ├── common/                  # M3～M6 共用的图片、配置与处理接口（待实现）
-│       ├── io/                      # M3 图片读取、校验和写出接口（待实现）
-│       ├── sequential/              # M4 单线程基线接口（待实现）
+│       ├── common/image.hpp         # M3～M6 共用 Image 与 Watermark 模型
+│       ├── common/processing.hpp    # M4～M6 共用配置、几何和像素语义
+│       ├── io/image_io.hpp          # M3 扫描、解码、批次和 PNG 写出接口
+│       ├── sequential/processor.hpp # M4 单线程批处理接口
 │       ├── openmp/                  # M5 OpenMP 后端接口（待实现）
 │       ├── cuda/                    # M6 CUDA 后端接口（待实现）
-│       └── benchmark/               # M7 验证、统计和报告接口（待实现）
+│       └── benchmark/               # M7 后端、验证、统计、报告和 Runner 接口
 ├── src/
 │   ├── cli/
 │   │   ├── main.cpp                # 可执行程序入口与 UTF-8 参数转换
 │   │   └── cli_parser.cpp          # 命令行解析与语义校验
 │   ├── planning/benchmark_plan.cpp # 由请求生成实验矩阵
 │   ├── controller/controller.cpp   # 编排、日志和退出码
-│   ├── pipeline/controller_only_pipeline.cpp # M3～M7 未接入时的占位 Pipeline
-│   ├── common/{geometry,resize,effects}/ # M3～M6 共享像素语义（待实现）
-│   ├── io/{catalog,decode,encode}/ # M3 扫描、解码和编码（待实现）
-│   ├── sequential/processor/       # M4 单线程处理流水线（待实现）
+│   ├── pipeline/benchmark_pipeline.cpp # M7 真实 Pipeline 工厂
+│   ├── common/{geometry,resize,effects}/ # M4～M6 共享像素语义
+│   ├── io/{catalog,decode,encode}/ # M3 扫描、解码、批次和 PNG 输出
+│   ├── sequential/processor/       # M4 单线程处理流水线
 │   ├── openmp/{scheduling,processor}/ # M5 调度和并行处理（待实现）
 │   ├── cuda/{runtime,transfer,kernels}/ # M6 运行时、传输和 Kernel（待实现）
-│   └── benchmark/{runner,validation,reporting,statistics}/ # M7 基准执行、校验、报告和统计（待实现）
+│   └── benchmark/{runner,validation,reporting,statistics}/ # 已实现的 M7
 ├── tools/
 │   ├── dashboard.py                # M1 Streamlit 启动入口
 │   ├── download_*.py               # 下载公开商品图片样本的辅助脚本
@@ -114,12 +164,12 @@ ParallelPix/
 │   │   ├── planning/               # M2 实验矩阵测试
 │   │   ├── controller/             # M2 编排与退出码测试
 │   │   ├── pipeline/               # M2 Pipeline 工厂测试
-│   │   ├── common/                  # 共享像素语义测试（待实现）
-│   │   ├── io/                      # M3 I/O 测试（待实现）
-│   │   ├── sequential/              # M4 基线测试（待实现）
+│   │   ├── common/                  # 共享几何与像素算法测试
+│   │   ├── io/                      # M3 I/O 正常与异常测试
+│   │   ├── sequential/              # M4 基线与 M3 集成测试
 │   │   ├── openmp/                  # M5 并行一致性与线程数测试（待实现）
 │   │   ├── cuda/                    # M6 Kernel、传输与设备降级测试（待实现）
-│   │   ├── benchmark/               # M7 验证、指标和 CSV 测试（待实现）
+│   │   ├── benchmark/               # M7 验证、指标、Runner 和 CSV 测试
 │   │   └── test_main.cpp、test_support.hpp # 共享 C++ 测试入口与断言
 │   ├── powershell/assert_cli_process.ps1 # M2 真实进程断言
 │   ├── fixtures/fake_cli.py        # M1 调用 CLI 的测试替身
@@ -137,15 +187,15 @@ ParallelPix/
 |------|--------------|----------|------|
 | M1 本地性能仪表板 | `tools/dashboard.py`、`tools/parallelpix_dashboard/` | `tests/test_dashboard_app.py`、`tests/test_*.py` | 已实现；支持 Demo 与 Local CLI 模式 |
 | M2 CLI Controller 与任务编排 | `src/{cli,planning,controller,pipeline}/`、`include/parallelpix/{cli,planning,controller,pipeline}/` | `tests/cpp/{cli,planning,controller,pipeline}/`、`tests/powershell/` | 已实现；负责解析、校验、计划、日志和退出码 |
-| M3 图片数据 I/O | `src/io/{catalog,decode,encode}/`、`include/parallelpix/io/` | `tests/cpp/io/`、`tests/fixtures/{images,watermarks}/` | 目录已就位；待实现、未接入构建 |
-| M4 Sequential 基线 | `src/sequential/processor/`、`include/parallelpix/sequential/` | `tests/cpp/sequential/` | 目录已就位；待实现、未接入构建 |
+| M3 图片数据 I/O | `src/io/{catalog,decode,encode}/`、`include/parallelpix/{common,io}/` | `tests/cpp/io/`、`tests/fixtures/{images,watermarks}/` | 已实现并由 M7 Pipeline 调用 |
+| M4 Sequential 基线 | `src/common/{geometry,resize,effects}/`、`src/sequential/processor/`、`include/parallelpix/{common,sequential}/` | `tests/cpp/{common,sequential}/` | 已实现、接入 M7 并作为性能与正确性基准 |
 | M5 OpenMP 后端 | `src/openmp/{scheduling,processor}/`、`include/parallelpix/openmp/` | `tests/cpp/openmp/` | 目录已就位；待实现、未接入构建 |
 | M6 CUDA 后端 | `src/cuda/{runtime,transfer,kernels}/`、`include/parallelpix/cuda/` | `tests/cpp/cuda/` | 目录已就位；待实现、未接入构建 |
-| M7 验证与 Benchmark | `src/benchmark/{runner,validation,reporting,statistics}/`、`include/parallelpix/benchmark/` | `tests/cpp/benchmark/` | 目录已就位；待实现、未接入构建 |
+| M7 验证与 Benchmark | `src/benchmark/{runner,validation,reporting,statistics}/`、`include/parallelpix/benchmark/` | `tests/cpp/benchmark/`、真实进程测试 | Core 已实现；待 M5/M6 注册后端完成三后端闭环 |
 
 ### 后续模块的落位约定
 
-实现 M3～M7 时必须在既有目录中落位，不在 `src/cli/`、`src/controller/` 或模块外目录插入业务实现。共享像素语义放在 `common/`；后端仅调用公共模型并实现各自的计算策略。每个模块首次落地时，才将其源文件、依赖与测试加入 `CMakeLists.txt`，并同步更新本节、相关 `docs/` 设计和测试记录。
+实现 M5～M6 时必须在既有目录中落位，不在 `src/cli/`、`src/controller/` 或模块外目录插入业务实现。共享像素语义继续放在 `common/`；后端仅调用公共模型并实现各自计算策略，再注册到 M7 `IBackendExecutor`。不得修改既有 CLI 与 27 列 CSV 契约。
 
 ## 编码约定
 
@@ -158,8 +208,8 @@ ParallelPix/
 
 | 依赖 | 用途 |
 |------|------|
-| Visual Studio 2022、CMake | 构建和测试 C++17 M2 CLI |
-| OpenCV | 图片解码、编码和内存容器 |
+| Visual Studio 2022、CMake、vcpkg | 构建 C++17 模块并按 manifest 获取依赖 |
+| OpenCV core/imgcodecs | M3 图片解码、编码和临时数据容器 |
 | OpenMP | 多核 CPU 并行处理 |
 | CUDA Toolkit | GPU 并行处理与计时 |
 | Streamlit、Pandas、Plotly | 本地性能仪表板与图表 |
