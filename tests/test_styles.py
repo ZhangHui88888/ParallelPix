@@ -21,6 +21,8 @@ def test_results_context_stacks_below_charts_at_narrow_desktop_widths(
     assert "max-width: none" in body
     assert '[data-testid="stSidebar"]' in body
     assert "width: 17rem" in body
+    assert '[data-testid="stDeployButton"]' in body
+    assert "display: none" in body
     assert ".st-key-matrix_card_0" in body
     assert "@media (max-width: 1280px)" in body
     assert ':has(.st-key-run_context) > [data-testid="stColumn"]' in body

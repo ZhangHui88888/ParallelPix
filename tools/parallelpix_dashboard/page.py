@@ -29,6 +29,7 @@ def _initialize_state() -> None:
         "results_source": "",
         "results_are_demo": False,
         "new_run_ids": (),
+        "select_new_run_after_execute": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -43,6 +44,7 @@ def _store_failure(message: str, logs: list[str]) -> None:
     st.session_state.results_source = ""
     st.session_state.results_are_demo = False
     st.session_state.new_run_ids = ()
+    st.session_state.select_new_run_after_execute = False
 
 
 def _execute(request: BenchmarkRequest, language: Language) -> None:
@@ -79,6 +81,7 @@ def _execute(request: BenchmarkRequest, language: Language) -> None:
     st.session_state.run_message = result.message
     st.session_state.run_logs = logs[-MAX_LOG_LINES:]
     st.session_state.new_run_ids = result.run_ids
+    st.session_state.select_new_run_after_execute = bool(result.run_ids)
     st.session_state.results_are_demo = request.mode == RunMode.DEMO
 
     if result.status in {RunStatus.SUCCESS, RunStatus.PARTIAL} and result.csv_path:
@@ -108,6 +111,36 @@ def _execute(request: BenchmarkRequest, language: Language) -> None:
         status_box.update(
             label=tr("benchmark_failed", language), state="error", expanded=True
         )
+
+
+def _load_saved_local_history(request: BenchmarkRequest) -> None:
+    """Restore persisted local CSV history after a dashboard refresh."""
+    if request.mode != RunMode.LOCAL_CLI:
+        return
+
+    source = str(request.result_csv)
+    if (
+        st.session_state.results_source == source
+        and not st.session_state.results_are_demo
+    ):
+        return
+
+    if not request.result_csv.is_file():
+        if not st.session_state.results_are_demo:
+            st.session_state.results_frame = None
+            st.session_state.results_source = ""
+        return
+
+    try:
+        st.session_state.results_frame = load_results(request.result_csv)
+        st.session_state.results_source = source
+        st.session_state.results_are_demo = False
+        st.session_state.new_run_ids = ()
+    except ResultsError:
+        # Do not turn an idle page into a failed benchmark merely because an old
+        # CSV is unavailable or malformed; an explicit run still reports errors.
+        st.session_state.results_frame = None
+        st.session_state.results_source = ""
 
 
 def render_language_selector() -> Language:
@@ -157,6 +190,7 @@ def render_app() -> None:
     if run_clicked:
         _execute(request, language)
     else:
+        _load_saved_local_history(request)
         render_saved_status(language)
     if request.mode == RunMode.LOCAL_CLI and st.session_state.results_are_demo:
         st.warning(tr("displayed_demo_banner", language))

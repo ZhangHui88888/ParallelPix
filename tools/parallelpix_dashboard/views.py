@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
@@ -8,6 +10,7 @@ from .components import RunContextMeta, render_run_context
 from .i18n import Language, tr
 from .models import BenchmarkRequest
 from .preview import preview_tr, render_preview_workspace
+from .lifecycle import load_cold_start_measurements
 from .results import run_options, select_run, valid_rows
 
 
@@ -67,14 +70,21 @@ def render_results(request: BenchmarkRequest, language: Language) -> None:
         return
 
     options = run_options(frame)
+    cold_start_measurements = load_cold_start_measurements(
+        Path(st.session_state.results_source)
+    )
     option_ids = [run_id for run_id, _ in options]
     timestamps = {run_id: timestamp for run_id, timestamp in options}
     preferred = next(
         (run_id for run_id in option_ids if run_id in st.session_state.new_run_ids),
         option_ids[0],
     )
-    if st.session_state.get("selected_run_id") not in option_ids:
+    if (
+        st.session_state.get("select_new_run_after_execute")
+        or st.session_state.get("selected_run_id") not in option_ids
+    ):
         st.session_state.selected_run_id = preferred
+        st.session_state.select_new_run_after_execute = False
 
     with results_column:
         selected_run_id = st.selectbox(
@@ -134,5 +144,10 @@ def render_results(request: BenchmarkRequest, language: Language) -> None:
                 recorded_at=timestamps[selected_run_id],
                 result_count=len(selected),
                 source=st.session_state.results_source,
+                cold_start_cli_duration=(
+                    f"{cold_start_measurements[selected_run_id]:.2f} ms"
+                    if selected_run_id in cold_start_measurements
+                    else None
+                ),
             ),
         )

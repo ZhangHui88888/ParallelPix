@@ -45,13 +45,14 @@ class BenchmarkRequest:
     cuda_batch_sizes: tuple[int, ...]
     warmups: int = 2
     repetitions: int = 5
+    input_errors: tuple[str, ...] = ()
 
     @property
     def normalized_backends(self) -> tuple[str, ...]:
         return normalize_backends(self.backends)
 
     def command_args(self) -> list[str]:
-        return [
+        args = [
             str(self.cli_path),
             "benchmark",
             "--input",
@@ -64,18 +65,19 @@ class BenchmarkRequest:
             ",".join(self.normalized_backends),
             "--image-counts",
             ",".join(map(str, self.image_counts)),
-            "--threads",
-            ",".join(map(str, self.thread_counts)),
-            "--cuda-batches",
-            ",".join(map(str, self.cuda_batch_sizes)),
             "--warmups",
             str(self.warmups),
             "--repetitions",
             str(self.repetitions),
             "--csv",
             str(self.result_csv),
-            "--append",
         ]
+        if self.thread_counts:
+            args.extend(["--threads", ",".join(map(str, self.thread_counts))])
+        if self.cuda_batch_sizes:
+            args.extend(["--cuda-batches", ",".join(map(str, self.cuda_batch_sizes))])
+        args.append("--append")
+        return args
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,7 @@ class RunResult:
     run_ids: tuple[str, ...]
     logs: tuple[str, ...]
     message: str
+    cold_start_cli_ms: float | None = None
 
 
 LogEmitter = Callable[[str], None]

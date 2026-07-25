@@ -40,6 +40,11 @@ def apply_styles() -> None:
             pointer-events: auto;
         }
 
+        /* ParallelPix only runs local benchmarks; publishing is not a product action. */
+        [data-testid="stDeployButton"] {
+            display: none;
+        }
+
         [data-testid="stSidebar"] {
             background: var(--pp-sidebar);
             border-right: 1px solid var(--pp-border);

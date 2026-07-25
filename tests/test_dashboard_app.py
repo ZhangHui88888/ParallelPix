@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
 
 DASHBOARD = Path(__file__).resolve().parents[1] / "tools" / "dashboard.py"
+DEMO_RESULTS = (
+    Path(__file__).resolve().parents[1]
+    / "tools"
+    / "parallelpix_dashboard"
+    / "assets"
+    / "demo_results.csv"
+)
 
 
 def test_default_dashboard_renders_demo_console() -> None:
@@ -26,6 +34,16 @@ def test_default_dashboard_renders_demo_console() -> None:
     )
 
 
+def test_matrix_values_are_free_text_inputs() -> None:
+    app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
+
+    assert app.text_input(key="image_counts_input").value == "10, 50, 100"
+    app.text_input(key="image_counts_input").set_value("1, 7").run()
+
+    assert not app.exception
+    assert app.text_input(key="image_counts_input").value == "1, 7"
+
+
 def test_demo_run_loads_metrics_and_history() -> None:
     app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
 
@@ -38,9 +56,20 @@ def test_demo_run_loads_metrics_and_history() -> None:
     assert app.selectbox(key="selected_run_id").value == "demo-20260725-001"
 
 
+def test_new_run_reselects_the_latest_run_instead_of_stale_history() -> None:
+    app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
+    app.button(key="run_benchmark").click().run(timeout=10)
+    app.selectbox(key="selected_run_id").set_value("demo-20260724-001").run()
+
+    app.button(key="run_benchmark").click().run(timeout=10)
+
+    assert app.selectbox(key="selected_run_id").value == "demo-20260725-001"
+
+
 def test_local_cli_mode_reports_missing_paths_without_crashing() -> None:
     app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
     app.selectbox(key="run_mode").set_value("Local CLI").run()
+    app.text_input(key="cli_path").set_value("missing/parallelpix.exe").run()
 
     app.button(key="run_benchmark").click().run(timeout=10)
 
@@ -49,6 +78,20 @@ def test_local_cli_mode_reports_missing_paths_without_crashing() -> None:
     assert app.session_state["results_are_demo"] is False
     assert any("CLI executable not found" in error.value for error in app.error)
     assert not any("Demo data" in warning.value for warning in app.warning)
+
+
+def test_local_cli_restores_existing_csv_history_after_refresh(tmp_path: Path) -> None:
+    result_csv = tmp_path / "history.csv"
+    shutil.copyfile(DEMO_RESULTS, result_csv)
+    app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
+
+    app.text_input(key="result_csv").set_value(str(result_csv)).run()
+    app.selectbox(key="run_mode").set_value("Local CLI").run()
+
+    assert not app.exception
+    assert app.session_state["results_are_demo"] is False
+    assert app.session_state["results_frame"] is not None
+    assert app.selectbox(key="selected_run_id").value == "demo-20260725-001"
 
 
 def test_language_switch_updates_streamlit_owned_copy() -> None:

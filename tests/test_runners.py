@@ -3,8 +3,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from tools.parallelpix_dashboard.models import BenchmarkRequest, RunMode, RunStatus
 from tools.parallelpix_dashboard.runners import DemoRunner, SubprocessRunner
+from tools.parallelpix_dashboard.lifecycle import load_cold_start_measurements
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -61,6 +64,11 @@ def test_subprocess_runner_maps_success_and_new_run_id(tmp_path: Path) -> None:
     assert result.status == RunStatus.SUCCESS
     assert result.run_ids == ("test-run-new",)
     assert result.csv_path == request.result_csv
+    assert result.cold_start_cli_ms is not None
+    assert result.cold_start_cli_ms > 0.0
+    assert load_cold_start_measurements(request.result_csv)["test-run-new"] == pytest.approx(
+        result.cold_start_cli_ms
+    )
 
 
 def test_subprocess_runner_maps_partial_success(tmp_path: Path) -> None:
