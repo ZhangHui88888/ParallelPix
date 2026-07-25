@@ -53,6 +53,7 @@ M7 通过 `run_benchmark_plan()` 接受执行器集合，因此测试和后续 M
 - 预热仅调用计算后端，不计时、不写 PNG。
 - `compute_ms` 使用 `steady_clock` 包围单次后端调用。
 - `end_to_end_ms` 包含目录扫描、图片解码、计算和 PNG 编码，不包含验证与 CSV 写入。
+- M1 额外在进程外记录“冷启动 CLI 耗时”，从创建 `parallelpix.exe` 子进程到其退出；该运行级指标包含初始化和 CSV 写入，保存在 M1 侧车文件，不混入 M7 的每配置 CSV 统计。
 - 正式样本至少 5 次；偶数样本中位数取中间两项平均值，标准差除以样本总数。
 - 吞吐量使用计算时间中位数：
 
@@ -101,4 +102,3 @@ megapixels_per_second =
 | Sequential 处理或验证失败 | 当前项失败，依赖项跳过 | 70 或部分成功 |
 | OpenMP/CUDA 未注册 | 对应项跳过，`BackendUnavailable` | 有 Sequential 时为 2 |
 | 全部项成功 | 提供 CSV | 0 |
-

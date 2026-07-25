@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tools.parallelpix_dashboard.models import BenchmarkRequest, RunMode, normalize_backends
+from tools.parallelpix_dashboard.sidebar import parse_positive_integer_list
 from tools.parallelpix_dashboard.validation import validate_request
 
 
@@ -38,6 +39,35 @@ def test_command_args_match_m2_contract(tmp_path: Path) -> None:
     assert args[args.index("--threads") + 1] == "1,2,4,8"
     assert args[args.index("--cuda-batches") + 1] == "1,4,8"
     assert args[-1] == "--append"
+
+
+def test_sequential_command_omits_unused_parallel_arguments(tmp_path: Path) -> None:
+    request = make_request(
+        tmp_path,
+        backends=("sequential",),
+        image_counts=(1,),
+        thread_counts=(),
+        cuda_batch_sizes=(),
+    )
+
+    args = request.command_args()
+
+    assert args[args.index("--backends") + 1] == "sequential"
+    assert args[args.index("--image-counts") + 1] == "1"
+    assert "--threads" not in args
+    assert "--cuda-batches" not in args
+
+
+def test_free_numeric_matrix_input_parses_and_deduplicates() -> None:
+    values, error = parse_positive_integer_list("1, 10, 1", "invalid")
+
+    assert values == (1, 10)
+    assert error is None
+
+    values, error = parse_positive_integer_list("1, zero", "invalid")
+
+    assert values == ()
+    assert error == "invalid"
 
 
 def test_demo_request_does_not_require_local_paths(tmp_path: Path) -> None:

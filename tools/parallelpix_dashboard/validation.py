@@ -21,7 +21,7 @@ def _validate_existing_parent(path: Path, label: str) -> list[str]:
 
 
 def validate_request(request: BenchmarkRequest) -> list[str]:
-    errors: list[str] = []
+    errors: list[str] = list(request.input_errors)
     unknown = set(request.backends).difference(SUPPORTED_BACKENDS)
 
     if not request.normalized_backends:

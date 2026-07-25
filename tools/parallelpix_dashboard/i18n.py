@@ -35,6 +35,10 @@ COPY: dict[str, tuple[str, str]] = {
     "image_counts": ("Image counts", "图片数量"),
     "openmp_threads": ("OpenMP threads", "OpenMP 线程"),
     "cuda_batch_sizes": ("CUDA batch sizes", "CUDA 批大小"),
+    "integer_list_help": (
+        "Enter comma-separated positive integers, for example {example}.",
+        "请输入以逗号分隔的正整数，例如 {example}。",
+    ),
     "measured_repetitions": ("Measured repetitions", "测量重复次数"),
     "warmup_caption": (
         "Warm-up runs are fixed at 2 for comparable results.",
@@ -127,6 +131,11 @@ COPY: dict[str, tuple[str, str]] = {
     "result_rows": ("Result rows", "结果行数"),
     "result_source": ("CSV", "CSV"),
     "duration": ("Duration", "耗时"),
+    "cold_start_cli_duration": ("Cold-start CLI duration", "冷启动 CLI 耗时"),
+    "cold_start_cli_note": (
+        "Measured outside the executable: process creation through process exit; it includes initialization and this entire benchmark invocation.",
+        "在可执行文件外测量：从创建进程到进程退出；包含初始化和本次完整基准调用。",
+    ),
     "image_sets_short": ("Image sets", "图片集"),
     "image_sets_formula": ("image sets", "个图片集"),
     "sequential_short": ("sequential", "顺序"),
@@ -169,6 +178,9 @@ EXACT_MESSAGES_ZH = {
     "Select at least one OpenMP thread count.": "请至少选择一个 OpenMP 线程数。",
     "Select at least one CUDA batch size.": "请至少选择一个 CUDA 批大小。",
     "M1 requires exactly 2 warm-up runs.": "M1 要求热身运行恰好为 2 次。",
+    "Image counts must be a comma-separated list of positive 32-bit integers.": "图片数量必须是以逗号分隔的正 32 位整数列表。",
+    "OpenMP thread counts must be a comma-separated list of positive 32-bit integers.": "OpenMP 线程数必须是以逗号分隔的正 32 位整数列表。",
+    "CUDA batch sizes must be a comma-separated list of positive 32-bit integers.": "CUDA 批大小必须是以逗号分隔的正 32 位整数列表。",
     "Benchmark repetitions must be at least 5.": "基准测试至少需要重复 5 次。",
     "The result path must use the .csv extension.": "结果路径必须使用 .csv 扩展名。",
     "Result CSV is empty.": "结果 CSV 为空。",

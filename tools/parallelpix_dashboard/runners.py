@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from .lifecycle import record_cold_start_measurements
 from .models import BenchmarkRequest, LogEmitter, RunResult, RunStatus
 from .results import read_run_ids
 
@@ -66,6 +68,7 @@ class SubprocessRunner:
                 logs.append(clean)
                 emit_log(clean)
 
+        started_at = time.perf_counter()
         try:
             process = subprocess.Popen(
                 command,
@@ -92,6 +95,7 @@ class SubprocessRunner:
                 logs=tuple(logs),
                 message="Benchmark CLI could not be started.",
             )
+        cold_start_cli_ms = (time.perf_counter() - started_at) * 1_000.0
 
         if exit_code not in {0, 2}:
             return RunResult(
@@ -122,7 +126,15 @@ class SubprocessRunner:
                 run_ids=(),
                 logs=tuple(logs),
                 message="Benchmark finished but did not append a new run_id.",
+                cold_start_cli_ms=cold_start_cli_ms,
             )
+
+        try:
+            record_cold_start_measurements(
+                request.result_csv, new_run_ids, cold_start_cli_ms
+            )
+        except OSError as error:
+            capture(f"Unable to record cold-start CLI duration: {error}")
 
         status = RunStatus.SUCCESS if exit_code == 0 else RunStatus.PARTIAL
         message = (
@@ -137,4 +149,5 @@ class SubprocessRunner:
             run_ids=new_run_ids,
             logs=tuple(logs),
             message=message,
+            cold_start_cli_ms=cold_start_cli_ms,
         )

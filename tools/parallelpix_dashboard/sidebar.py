@@ -4,11 +4,12 @@ from pathlib import Path
 
 import streamlit as st
 
-from .i18n import Language, tr
+from .i18n import Language, localize_message, tr
 from .models import BenchmarkRequest, RunMode
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MAX_UINT32 = 2**32 - 1
 
 
 def _project_path(value: str) -> Path:
@@ -21,6 +22,44 @@ def _section_label(key: str, language: Language) -> None:
         f'<div class="sidebar-section-label">{tr(key, language)}</div>',
         unsafe_allow_html=True,
     )
+
+
+def parse_positive_integer_list(value: str, error_message: str) -> tuple[tuple[int, ...], str | None]:
+    """Parse the comma-separated positive integer syntax accepted by the CLI."""
+    items = [item.strip() for item in value.split(",")]
+    if not value.strip() or not all(items):
+        return (), error_message
+
+    parsed: list[int] = []
+    for item in items:
+        try:
+            number = int(item)
+        except ValueError:
+            return (), error_message
+        if number <= 0 or number > MAX_UINT32:
+            return (), error_message
+        if number not in parsed:
+            parsed.append(number)
+    return tuple(parsed), None
+
+
+def _integer_list_input(
+    label: str,
+    default: str,
+    key: str,
+    error_message: str,
+    language: Language,
+) -> tuple[tuple[int, ...], str | None]:
+    raw_value = st.sidebar.text_input(
+        label,
+        value=default,
+        key=key,
+        help=tr("integer_list_help", language, example=default),
+    )
+    values, error = parse_positive_integer_list(raw_value, error_message)
+    if error:
+        st.sidebar.error(localize_message(error, language))
+    return values, error
 
 
 def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
@@ -38,12 +77,14 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
 
     cli_path = st.sidebar.text_input(
         tr("cli_executable", language),
-        value="build/Release/parallelpix.exe",
+        value="build/m7/Release/parallelpix.exe",
         disabled=mode == RunMode.DEMO,
         key="cli_path",
     )
     input_dir = st.sidebar.text_input(
-        tr("input_directory", language), value="data/images", key="input_dir"
+        tr("input_directory", language),
+        value="data/benchmark/abo-products-highres-1000",
+        key="input_dir",
     )
     output_dir = st.sidebar.text_input(
         tr("output_directory", language), value="output", key="output_dir"
@@ -98,33 +139,32 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
     if "sequential" not in backends and set(backends).intersection({"openmp", "cuda"}):
         st.sidebar.info(tr("baseline_info", language))
 
-    image_counts = tuple(
-        st.sidebar.multiselect(
-            tr("image_counts", language),
-            (10, 50, 100, 250, 500),
-            default=(10, 50, 100),
-            key="image_counts",
-        )
+    image_counts, image_counts_error = _integer_list_input(
+        tr("image_counts", language),
+        "10, 50, 100",
+        "image_counts_input",
+        "Image counts must be a comma-separated list of positive 32-bit integers.",
+        language,
     )
     thread_counts: tuple[int, ...] = ()
+    thread_counts_error: str | None = None
     if "openmp" in backends:
-        thread_counts = tuple(
-            st.sidebar.multiselect(
-                tr("openmp_threads", language),
-                (1, 2, 4, 8, 16, 32),
-                default=(1, 2, 4, 8),
-                key="thread_counts",
-            )
+        thread_counts, thread_counts_error = _integer_list_input(
+            tr("openmp_threads", language),
+            "1, 2, 4, 8",
+            "thread_counts_input",
+            "OpenMP thread counts must be a comma-separated list of positive 32-bit integers.",
+            language,
         )
     cuda_batch_sizes: tuple[int, ...] = ()
+    cuda_batch_sizes_error: str | None = None
     if "cuda" in backends:
-        cuda_batch_sizes = tuple(
-            st.sidebar.multiselect(
-                tr("cuda_batch_sizes", language),
-                (1, 2, 4, 8, 16),
-                default=(1, 4, 8),
-                key="cuda_batch_sizes",
-            )
+        cuda_batch_sizes, cuda_batch_sizes_error = _integer_list_input(
+            tr("cuda_batch_sizes", language),
+            "1, 4, 8",
+            "cuda_batch_sizes_input",
+            "CUDA batch sizes must be a comma-separated list of positive 32-bit integers.",
+            language,
         )
 
     repetitions = int(
@@ -158,5 +198,10 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
         thread_counts=thread_counts,
         cuda_batch_sizes=cuda_batch_sizes,
         repetitions=repetitions,
+        input_errors=tuple(
+            error
+            for error in (image_counts_error, thread_counts_error, cuda_batch_sizes_error)
+            if error is not None
+        ),
     )
     return request, run_clicked

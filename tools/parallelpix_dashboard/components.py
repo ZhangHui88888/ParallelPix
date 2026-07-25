@@ -19,7 +19,7 @@ class RunContextMeta:
     recorded_at: datetime | None = None
     result_count: int | None = None
     source: str | None = None
-    duration: str | None = None
+    cold_start_cli_duration: str | None = None
 
 
 def _display_path(path: Path) -> str:
@@ -188,7 +188,10 @@ def render_run_context(
             tr("status", language),
             tr(f"status_{status.value}", language) if run_id else tr("no_run", language),
         ),
-        (tr("duration", language), metadata.duration or tr("no_run", language)),
+        (
+            tr("cold_start_cli_duration", language),
+            metadata.cold_start_cli_duration or tr("no_run", language),
+        ),
         (
             tr("result_rows", language),
             str(metadata.result_count)
@@ -217,3 +220,4 @@ def render_run_context(
         st.markdown(f"#### {tr('context_run_status', language)}")
         for label, value in status_items:
             _context_row(label, value, code=label in {tr("result_source", language), tr("run_id", language)})
+        st.caption(tr("cold_start_cli_note", language))
