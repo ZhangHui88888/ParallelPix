@@ -169,8 +169,31 @@ ExperimentOutcome measure_experiment(
         }
 
         const auto compute_start = Clock::now();
-        auto execution =
-            executor.execute(*batch.images, watermark, config, experiment);
+        const ProgressSink progress = repetition == 0
+            ? [&log, &experiment, &metadata](const ProgressSample& sample) {
+                  if (log)
+                  {
+                      log({
+                          m2::LogLevel::Info,
+                          "trajectory",
+                          "backend=" + backend_name(experiment.backend) +
+                              " run_id=" + metadata.run_id +
+                              " thread_count=" + std::to_string(
+                                  experiment.thread_count.value_or(0)) +
+                              " cuda_batch_size=" + std::to_string(
+                                  experiment.cuda_batch_size.value_or(0)) +
+                              " image_count=" +
+                              std::to_string(experiment.image_count) +
+                              " processed=" +
+                              std::to_string(sample.processed_images) +
+                              " ms_per_image=" +
+                              std::to_string(sample.batch_ms_per_image),
+                      });
+                  }
+              }
+            : ProgressSink{};
+        auto execution = executor.execute(
+            *batch.images, watermark, config, experiment, progress);
         const auto compute_end = Clock::now();
         if (!execution.processing.ok())
         {

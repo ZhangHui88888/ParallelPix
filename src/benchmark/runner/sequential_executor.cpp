@@ -19,10 +19,20 @@ public:
         const std::vector<Image>& images,
         const Watermark& watermark,
         const ProcessingConfig& config,
-        const m2::ExperimentSpec&) override
+        const m2::ExperimentSpec&,
+        const ProgressSink& progress) override
     {
         return {
-            sequential::process_batch(images, watermark, config),
+            sequential::process_batch(
+                images,
+                watermark,
+                config,
+                [&progress](std::size_t processed, double ms_per_image) {
+                    if (progress)
+                    {
+                        progress({processed, ms_per_image});
+                    }
+                }),
             std::nullopt,
         };
     }

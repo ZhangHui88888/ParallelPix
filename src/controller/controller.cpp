@@ -32,7 +32,7 @@ void write_log(
 {
     auto& stream = event.level == LogLevel::Error ? errors : output;
     stream << '[' << level_name(event.level) << "][" << event.stage << "] "
-           << event.message << '\n';
+           << event.message << '\n' << std::flush;
 }
 
 void write_result(

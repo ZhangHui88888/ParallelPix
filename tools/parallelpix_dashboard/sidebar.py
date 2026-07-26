@@ -139,13 +139,19 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
     if "sequential" not in backends and set(backends).intersection({"openmp", "cuda"}):
         st.sidebar.info(tr("baseline_info", language))
 
-    image_counts, image_counts_error = _integer_list_input(
-        tr("image_counts", language),
-        "10, 50, 100",
-        "image_counts_input",
-        "Image counts must be a comma-separated list of positive 32-bit integers.",
-        language,
+    image_count = int(
+        st.sidebar.number_input(
+            tr("image_count", language),
+            min_value=1,
+            max_value=MAX_UINT32,
+            value=100,
+            step=10,
+            key="image_count_input",
+            help=tr("single_image_count_help", language),
+        )
     )
+    image_counts = (image_count,)
+    image_counts_error: str | None = None
     thread_counts: tuple[int, ...] = ()
     thread_counts_error: str | None = None
     if "openmp" in backends:
@@ -167,17 +173,22 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
             language,
         )
 
-    repetitions = int(
-        st.sidebar.number_input(
-            tr("measured_repetitions", language),
-            min_value=5,
-            max_value=30,
-            value=5,
-            step=1,
-            key="repetitions",
-        )
+    measurement_mode = st.sidebar.radio(
+        tr("measurement_mode", language),
+        ("steady", "cold_start"),
+        format_func=lambda value: tr(f"measurement_{value}", language),
+        key="measurement_mode",
+        disabled=mode == RunMode.DEMO,
     )
-    st.sidebar.caption(tr("warmup_caption", language))
+    measure_cold_start = measurement_mode == "cold_start"
+    repetitions = 1 if measure_cold_start else int(
+        st.sidebar.number_input(tr("measured_repetitions", language), min_value=5,
+            max_value=30, value=5, step=1, key="repetitions")
+    )
+    st.sidebar.caption(
+        tr("cold_start_caption", language)
+        if measure_cold_start else tr("warmup_caption", language)
+    )
     run_clicked = st.sidebar.button(
         tr("run_benchmark", language),
         type="primary",
@@ -198,10 +209,12 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
         thread_counts=thread_counts,
         cuda_batch_sizes=cuda_batch_sizes,
         repetitions=repetitions,
+        warmups=0 if measure_cold_start else 2,
         input_errors=tuple(
             error
             for error in (image_counts_error, thread_counts_error, cuda_batch_sizes_error)
             if error is not None
         ),
+        measure_cold_start=measure_cold_start,
     )
     return request, run_clicked

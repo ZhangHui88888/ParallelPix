@@ -35,9 +35,11 @@ def validate_request(request: BenchmarkRequest) -> list[str]:
     if "cuda" in request.normalized_backends:
         errors.extend(_positive_list(request.cuda_batch_sizes, "CUDA batch size"))
 
-    if request.warmups != 2:
+    if request.measure_cold_start and (request.warmups != 0 or request.repetitions != 1):
+        errors.append("Cold-start mode requires 0 warm-up runs and 1 repetition.")
+    if not request.measure_cold_start and request.warmups != 2:
         errors.append("M1 requires exactly 2 warm-up runs.")
-    if request.repetitions < 5:
+    if not request.measure_cold_start and request.repetitions < 5:
         errors.append("Benchmark repetitions must be at least 5.")
     if request.result_csv.suffix.lower() != ".csv":
         errors.append("The result path must use the .csv extension.")

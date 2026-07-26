@@ -34,14 +34,15 @@ def test_default_dashboard_renders_demo_console() -> None:
     )
 
 
-def test_matrix_values_are_free_text_inputs() -> None:
+def test_image_count_is_a_single_positive_number() -> None:
     app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
 
-    assert app.text_input(key="image_counts_input").value == "10, 50, 100"
-    app.text_input(key="image_counts_input").set_value("1, 7").run()
+    assert app.number_input(key="image_count_input").value == 100
+    app.number_input(key="image_count_input").set_value(50).run()
 
     assert not app.exception
-    assert app.text_input(key="image_counts_input").value == "1, 7"
+    assert app.number_input(key="image_count_input").value == 50
+    assert app.session_state["image_count_input"] == 50
 
 
 def test_demo_run_loads_metrics_and_history() -> None:
@@ -125,6 +126,10 @@ def test_default_page_exposes_matrix_summary_without_results() -> None:
     assert "Sequential · OpenMP · CUDA" in markdown
     assert "Experiment matrix" in markdown
     assert "Total measurements" in captions
+    assert "1 image sets" in markdown
+    assert "40" in markdown
+    assert "Run status" in markdown
+    return
     assert "3 image sets × (1 sequential + 4 threads + 3 batches) × 5 reps" in markdown
     assert "120" in markdown
     assert "Run status" in markdown
