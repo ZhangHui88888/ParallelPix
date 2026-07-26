@@ -2,6 +2,7 @@
 #include "io_test_support.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +19,8 @@
 namespace {
 
 using parallelpix::benchmark::BackendExecution;
+using parallelpix::benchmark::BackendAvailability;
+using parallelpix::benchmark::CudaPhaseTiming;
 using parallelpix::benchmark::IBackendExecutor;
 using parallelpix::m2::Backend;
 using parallelpix::m2::BenchmarkPlan;
@@ -89,6 +92,91 @@ public:
             "Injected Sequential failure.",
         });
         return {std::move(result), std::nullopt};
+    }
+
+    std::size_t calls = 0;
+};
+
+class ProgressCopyExecutor final : public IBackendExecutor
+{
+public:
+    Backend backend() const noexcept override
+    {
+        return Backend::Sequential;
+    }
+
+    BackendExecution execute(
+        const std::vector<parallelpix::Image>& images,
+        const parallelpix::Watermark&,
+        const parallelpix::ProcessingConfig&,
+        const ExperimentSpec&,
+        const parallelpix::benchmark::ProgressSink& progress) override
+    {
+        executing = true;
+        if (progress)
+        {
+            progress({images.size(), 1.0});
+        }
+        executing = false;
+
+        parallelpix::BatchProcessingResult result;
+        result.images = images;
+        return {std::move(result), std::nullopt};
+    }
+
+    bool executing = false;
+};
+
+class UnavailableCudaExecutor final : public IBackendExecutor
+{
+public:
+    Backend backend() const noexcept override
+    {
+        return Backend::Cuda;
+    }
+
+    BackendAvailability availability() const override
+    {
+        return {false, "Injected CUDA device discovery failure."};
+    }
+
+    BackendExecution execute(
+        const std::vector<parallelpix::Image>&,
+        const parallelpix::Watermark&,
+        const parallelpix::ProcessingConfig&,
+        const ExperimentSpec&,
+        const parallelpix::benchmark::ProgressSink&) override
+    {
+        ++calls;
+        return {};
+    }
+
+    std::size_t calls = 0;
+};
+
+class TimedCudaCopyExecutor final : public IBackendExecutor
+{
+public:
+    Backend backend() const noexcept override
+    {
+        return Backend::Cuda;
+    }
+
+    BackendExecution execute(
+        const std::vector<parallelpix::Image>& images,
+        const parallelpix::Watermark&,
+        const parallelpix::ProcessingConfig&,
+        const ExperimentSpec&,
+        const parallelpix::benchmark::ProgressSink&) override
+    {
+        ++calls;
+        parallelpix::BatchProcessingResult result;
+        result.images = images;
+        return {
+            std::move(result),
+            CudaPhaseTiming{1.0, 2.0, 3.0},
+            std::uint32_t{2},
+        };
     }
 
     std::size_t calls = 0;
@@ -166,6 +254,33 @@ PP_TEST("benchmark runner executes exact warmups and repetitions")
     PP_REQUIRE(std::filesystem::is_regular_file(paths.csv));
 }
 
+PP_TEST("benchmark runner emits trajectory logs after measured execution")
+{
+    FixturePaths paths;
+    auto plan = make_plan(paths);
+    plan.experiments = {
+        {Backend::Sequential, 1, std::nullopt, std::nullopt},
+    };
+    ProgressCopyExecutor sequential;
+    bool trajectory_logged = false;
+    bool trajectory_logged_during_execution = false;
+
+    const auto summary = parallelpix::benchmark::run_benchmark_plan(
+        plan,
+        {&sequential},
+        [&](const auto& event) {
+            if (event.stage == "trajectory")
+            {
+                trajectory_logged = true;
+                trajectory_logged_during_execution = sequential.executing;
+            }
+        });
+
+    PP_REQUIRE_EQ(summary.succeeded, std::size_t{1});
+    PP_REQUIRE(trajectory_logged);
+    PP_REQUIRE(!trajectory_logged_during_execution);
+}
+
 PP_TEST("benchmark runner records invalid output and skips unavailable backend")
 {
     FixturePaths paths;
@@ -193,6 +308,65 @@ PP_TEST("benchmark runner records invalid output and skips unavailable backend")
         std::istreambuf_iterator<char>());
     PP_REQUIRE(contents.find("openmp,2,,1,") != std::string::npos);
     PP_REQUIRE(contents.find(",false,3,,,") != std::string::npos);
+}
+
+PP_TEST("benchmark runner skips a compiled CUDA backend without a device")
+{
+    FixturePaths paths;
+    auto plan = make_plan(paths);
+    plan.experiments = {
+        {Backend::Sequential, 1, std::nullopt, std::nullopt},
+        {Backend::Cuda, 1, std::nullopt, 4},
+    };
+    CopyExecutor sequential(Backend::Sequential, false);
+    UnavailableCudaExecutor cuda;
+
+    const auto summary = parallelpix::benchmark::run_benchmark_plan(
+        plan, {&sequential, &cuda}, [](const auto&) {});
+
+    PP_REQUIRE_EQ(summary.succeeded, std::size_t{1});
+    PP_REQUIRE_EQ(summary.skipped, std::size_t{1});
+    PP_REQUIRE_EQ(summary.failed, std::size_t{0});
+    PP_REQUIRE_EQ(cuda.calls, std::size_t{0});
+    PP_REQUIRE(std::any_of(
+        summary.issues.begin(),
+        summary.issues.end(),
+        [](const auto& issue) {
+            return issue.message.find("device discovery failure") !=
+                std::string::npos;
+        }));
+}
+
+PP_TEST("benchmark runner records CUDA phases and effective batch size")
+{
+    FixturePaths paths;
+    auto plan = make_plan(paths);
+    plan.experiments = {
+        {Backend::Sequential, 1, std::nullopt, std::nullopt},
+        {Backend::Cuda, 1, std::nullopt, 4},
+    };
+    CopyExecutor sequential(Backend::Sequential, false);
+    TimedCudaCopyExecutor cuda;
+
+    const auto summary = parallelpix::benchmark::run_benchmark_plan(
+        plan, {&sequential, &cuda}, [](const auto&) {});
+    PP_REQUIRE_EQ(summary.succeeded, std::size_t{2});
+    PP_REQUIRE_EQ(cuda.calls, std::size_t{7});
+
+    std::ifstream stream(paths.csv);
+    std::string header;
+    std::string sequential_row;
+    std::string cuda_row;
+    std::getline(stream, header);
+    std::getline(stream, sequential_row);
+    std::getline(stream, cuda_row);
+    const auto fields = split_csv_row(cuda_row);
+    PP_REQUIRE_EQ(fields.size(), std::size_t{27});
+    PP_REQUIRE_EQ(fields[2], std::string("cuda"));
+    PP_REQUIRE_EQ(fields[4], std::string("2"));
+    PP_REQUIRE_EQ(fields[24], std::string("1"));
+    PP_REQUIRE_EQ(fields[25], std::string("2"));
+    PP_REQUIRE_EQ(fields[26], std::string("3"));
 }
 
 PP_TEST("benchmark runner derives throughput speedup and OpenMP efficiency")

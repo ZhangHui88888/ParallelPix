@@ -2,9 +2,9 @@
 
 ## 目标与边界
 
-M7 将 M2 的实验计划、M3 图片 I/O 和 M4～M6 处理后端串成真实 Benchmark。它负责后端生命周期、预热、计时、输出验证、统计与 CSV 报告，不实现像素算法，也不修改 M1/M2 的命令或 27 列 CSV 契约。
+M7 将 M2 的实验计划、M3 图片 I/O 和 M4～M6 处理后端串成真实 Benchmark。它负责后端生命周期、预热、计时、输出验证、统计与 CSV 报告，不实现像素算法。当前 M7 Core 不修改 M1/M2 的命令或27列 CSV 契约；M8 后续作为独立接口版本受控扩展。
 
-当前 M7 Core 注册 Sequential 执行器。OpenMP、CUDA 未实现时，对应实验计为跳过；只要 Sequential 成功，CLI 返回部分成功并保留有效 CSV。M5/M6 后续只需实现并注册 `IBackendExecutor`。
+当前 M7 Core 注册 Sequential 执行器，并在 CUDA-enabled 构建中注册 CUDA 执行器。OpenMP 未实现或 CUDA 运行时不可用时，对应实验计为跳过；只要已有后端成功，CLI 返回部分成功并保留有效 CSV。M5 后续只需实现并注册 `IBackendExecutor`。
 
 ## 模块与构建边界
 
@@ -14,9 +14,9 @@ parallelpix_m2
 
 parallelpix_benchmark
   ├─ statistics / validation / reporting
-  ├─ runner / SequentialExecutor
+  ├─ runner / SequentialExecutor / CudaExecutor
   ├─ BenchmarkPipeline 工厂
-  └─ 依赖 parallelpix_io、parallelpix_sequential
+  └─ 依赖 parallelpix_io、parallelpix_sequential、可选 parallelpix_cuda
 ```
 
 `parallelpix_m2` 不再包含具体 Pipeline，避免 M2 与 M7 循环依赖。可执行程序链接 `parallelpix_benchmark`，后者传递 M2 控制层依赖。
@@ -25,11 +25,18 @@ parallelpix_benchmark
 
 - `SummaryStatistics`：中位数、最小值、最大值和总体标准差。
 - `ValidationResult`：验证结论、可选最大像素误差、结构错误位置与消息。
-- `BackendExecution`：后端处理结果和可选 CUDA 分阶段时间。
-- `IBackendExecutor`：报告后端类型，并以图片、水印、公共配置和实验项执行一次处理。
+- `BackendExecution`：后端处理结果、可选 CUDA 分阶段时间和实际 CUDA 批大小。
+- `BackendAvailability`：报告已编译后端的运行时设备/驱动可用性。
+- `IBackendExecutor`：报告后端类型与可用性，并以图片、水印、公共配置和实验项执行一次处理。
 - `BenchmarkRecord`：严格对应 M1 要求的 27 列；不适用值使用空字段。
 
 M7 通过 `run_benchmark_plan()` 接受执行器集合，因此测试和后续 M5/M6 均不需要改动 Controller。
+
+### M8 扩展边界
+
+M8 完成后仍通过 `IBackendExecutor` 接入 M7。Hybrid 的一次 `execute()` 内部并发调用 OpenMP/CUDA，M7 只观察完整 wall-clock、合并输出、实际 CUDA 批大小和 GPU 子集的分阶段时间。
+
+为记录可复现的 CPU 工作比例，M8 计划把 CSV 从27列扩展为28列 `hybrid_cpu_share`。报告器必须显式区分 Schema 版本：现有27列表头继续可读，新写入采用28列表头；首次向旧文件追加时，先通过临时文件把旧行原子升级为第28列为空的新 Schema，再追加新行。升级校验或写入失败时保留原文件。M1 负责向后兼容读取，M7 不把 CPU 比例编码到其他字段。
 
 ## 执行流程
 
@@ -37,7 +44,7 @@ M7 通过 `run_benchmark_plan()` 接受执行器集合，因此测试和后续 M
 2. 加载最大图片规模，冻结本次运行使用的有序源文件列表。
 3. 为本次 CLI 调用生成唯一 `run_id` 和统一 UTC 记录时间。
 4. 按 `BenchmarkPlan` 顺序处理实验：
-   - 后端未注册时标记 `skipped`；
+   - 后端未注册或运行时不可用时标记 `skipped`；
    - 非 Sequential 实验缺少同规模基准时标记 `skipped`；
    - 使用预解码批次执行 2 次计算预热；
    - 每次正式测量重新扫描、解码并检查源文件列表未变化；
@@ -53,7 +60,7 @@ M7 通过 `run_benchmark_plan()` 接受执行器集合，因此测试和后续 M
 - 预热仅调用计算后端，不计时、不写 PNG。
 - `compute_ms` 使用 `steady_clock` 包围单次后端调用。
 - `end_to_end_ms` 包含目录扫描、图片解码、计算和 PNG 编码，不包含验证与 CSV 写入。
-- M1 额外在进程外记录完整 CLI 调用耗时；勾选冷启动基准时，M1 为每个配置另启临时 CLI 进程并记录逐配置冷启动值。两者均保存在 M1 侧车文件，不混入 M7 的每配置 CSV 统计。
+- M1 额外在进程外记录完整 CLI 调用耗时；单次冷启动模式使用一个新 CLI 进程、0 次预热和1次正式测量运行整个所选矩阵，不再追加逐配置探测。运行级耗时保存在 M1 侧车文件，不混入 M7 的每配置 CSV 统计。
 - 正式样本至少 5 次；偶数样本中位数取中间两项平均值，标准差除以样本总数。
 - 吞吐量使用计算时间中位数：
 
@@ -64,7 +71,7 @@ megapixels_per_second =
 ```
 
 - Sequential 验证通过时 `speedup=1`。
-- OpenMP/CUDA 只在验证通过且同规模 Sequential 有效时计算加速比。
+- OpenMP/CUDA 以及后续 Hybrid 只在验证通过且同规模 Sequential 有效时计算加速比。
 - 并行效率只适用于 OpenMP；CUDA 的 H2D、Kernel、D2H 分别保存中位数。
 
 ## 输出与验证
@@ -82,6 +89,7 @@ megapixels_per_second =
 - Sequential：内存结果与重新解码的自身 PNG 完全一致。
 - OpenMP：持久化 PNG 与同规模 Sequential PNG 完全一致。
 - CUDA：每通道最大绝对误差不超过 1。
+- Hybrid：CPU 子集完全一致、GPU 子集误差不超过 1，并检查合并后的数量、顺序与来源路径。
 - 尺寸、通道、步长或批次数不一致属于结构失败，不伪造最大像素误差。
 - 验证失败行仍写入 CSV，但 `validation_passed=false`，`speedup` 和 `parallel_efficiency` 为空。
 
@@ -100,5 +108,5 @@ megapixels_per_second =
 | 输入、水印或图片数量无效 | 全部失败，`Input` | 65 |
 | CSV 或图片输出失败 | `Output`，不提供成功 CSV | 73 |
 | Sequential 处理或验证失败 | 当前项失败，依赖项跳过 | 70 或部分成功 |
-| OpenMP/CUDA 未注册 | 对应项跳过，`BackendUnavailable` | 有 Sequential 时为 2 |
+| 后端未注册或运行时不可用 | 对应项跳过，`BackendUnavailable` | 有其他成功后端时为 2 |
 | 全部项成功 | 提供 CSV | 0 |

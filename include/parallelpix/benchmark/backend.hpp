@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace parallelpix::benchmark {
@@ -22,6 +23,13 @@ struct BackendExecution
 {
     BatchProcessingResult processing;
     std::optional<CudaPhaseTiming> cuda_phase;
+    std::optional<std::uint32_t> effective_cuda_batch_size;
+};
+
+struct BackendAvailability
+{
+    bool available = true;
+    std::string message;
 };
 
 struct ProgressSample
@@ -39,6 +47,11 @@ public:
 
     [[nodiscard]] virtual m2::Backend backend() const noexcept = 0;
 
+    [[nodiscard]] virtual BackendAvailability availability() const
+    {
+        return {};
+    }
+
     virtual BackendExecution execute(
         const std::vector<Image>& images,
         const Watermark& watermark,
@@ -48,5 +61,6 @@ public:
 };
 
 std::unique_ptr<IBackendExecutor> make_sequential_executor();
+std::unique_ptr<IBackendExecutor> make_cuda_executor();
 
 }  // namespace parallelpix::benchmark

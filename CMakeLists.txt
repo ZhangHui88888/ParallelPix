@@ -6,13 +6,62 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(PARALLELPIX_CUDA "AUTO" CACHE STRING
+    "Build the CUDA backend: AUTO, ON, or OFF")
+set_property(CACHE PARALLELPIX_CUDA PROPERTY STRINGS AUTO ON OFF)
+string(TOUPPER "${PARALLELPIX_CUDA}" PARALLELPIX_CUDA_MODE)
+if(NOT PARALLELPIX_CUDA_MODE MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR
+        "PARALLELPIX_CUDA must be AUTO, ON, or OFF.")
+endif()
+
+set(PARALLELPIX_HAS_CUDA OFF)
+if(NOT PARALLELPIX_CUDA_MODE STREQUAL "OFF")
+    include(CheckLanguage)
+    check_language(CUDA)
+    if(CMAKE_CUDA_COMPILER)
+        enable_language(CUDA)
+        find_package(CUDAToolkit REQUIRED)
+        if(WIN32)
+            find_file(PARALLELPIX_CUDART_DLL
+                NAMES cudart64_12.dll
+                PATHS "${CUDAToolkit_BIN_DIR}"
+                NO_DEFAULT_PATH
+                REQUIRED
+            )
+        endif()
+        set(PARALLELPIX_HAS_CUDA ON)
+        if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+            set(CMAKE_CUDA_ARCHITECTURES 120 CACHE STRING
+                "CUDA architectures for ParallelPix")
+        endif()
+        message(STATUS
+            "ParallelPix CUDA backend enabled for architectures: "
+            "${CMAKE_CUDA_ARCHITECTURES}")
+    elseif(PARALLELPIX_CUDA_MODE STREQUAL "ON")
+        message(FATAL_ERROR
+            "PARALLELPIX_CUDA=ON but no CUDA compiler was found.")
+    else()
+        message(STATUS
+            "CUDA compiler not found; building CPU-only ParallelPix.")
+    endif()
+endif()
+
 find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgcodecs)
 
 function(parallelpix_enable_warnings target)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+        target_compile_options(${target} PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:/W4>
+            $<$<COMPILE_LANGUAGE:CXX>:/permissive->
+            $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+        )
     else()
-        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(${target} PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+            $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
+            $<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>
+        )
     endif()
 endfunction()
 
@@ -50,6 +99,7 @@ add_library(parallelpix_processing STATIC
     src/common/effects/effects.cpp
     src/common/geometry/center_crop.cpp
     src/common/resize/bilinear.cpp
+    src/common/validation/preparation.cpp
 )
 target_include_directories(parallelpix_processing
     PUBLIC
@@ -71,7 +121,44 @@ target_link_libraries(parallelpix_sequential
 )
 parallelpix_enable_warnings(parallelpix_sequential)
 
-add_library(parallelpix_benchmark STATIC
+if(PARALLELPIX_HAS_CUDA)
+    add_library(parallelpix_cuda STATIC
+        src/cuda/processor/batch_executor.cpp
+        src/cuda/processor/batch_packer.cpp
+        src/cuda/processor/processor.cpp
+        src/cuda/runtime/resources.cpp
+        src/cuda/runtime/runtime.cpp
+        src/cuda/kernels/process_batch.cu
+    )
+    target_include_directories(parallelpix_cuda
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda
+    )
+    target_link_libraries(parallelpix_cuda
+        PUBLIC
+            parallelpix_processing
+        PRIVATE
+            CUDA::cudart
+    )
+    set_target_properties(parallelpix_cuda PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+        CUDA_EXTENSIONS OFF
+    )
+    if(WIN32)
+        add_custom_command(TARGET parallelpix_cuda POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${PARALLELPIX_CUDART_DLL}"
+                "$<TARGET_FILE_DIR:parallelpix_cuda>"
+            COMMENT "Copying the CUDA runtime beside ParallelPix binaries"
+        )
+    endif()
+    parallelpix_enable_warnings(parallelpix_cuda)
+endif()
+
+set(PARALLELPIX_BENCHMARK_SOURCES
     src/benchmark/reporting/reporting.cpp
     src/benchmark/runner/experiment.cpp
     src/benchmark/runner/runner.cpp
@@ -80,6 +167,19 @@ add_library(parallelpix_benchmark STATIC
     src/benchmark/statistics/statistics.cpp
     src/benchmark/validation/validation.cpp
     src/pipeline/benchmark_pipeline.cpp
+)
+if(PARALLELPIX_HAS_CUDA)
+    list(APPEND PARALLELPIX_BENCHMARK_SOURCES
+        src/benchmark/runner/cuda_executor.cpp
+    )
+else()
+    list(APPEND PARALLELPIX_BENCHMARK_SOURCES
+        src/benchmark/runner/cuda_executor_stub.cpp
+    )
+endif()
+
+add_library(parallelpix_benchmark STATIC
+    ${PARALLELPIX_BENCHMARK_SOURCES}
 )
 target_include_directories(parallelpix_benchmark
     PUBLIC
@@ -92,6 +192,9 @@ target_link_libraries(parallelpix_benchmark
         parallelpix_io
         parallelpix_sequential
 )
+if(PARALLELPIX_HAS_CUDA)
+    target_link_libraries(parallelpix_benchmark PRIVATE parallelpix_cuda)
+endif()
 parallelpix_enable_warnings(parallelpix_benchmark)
 
 add_executable(parallelpix
@@ -184,6 +287,29 @@ if(BUILD_TESTING)
     parallelpix_enable_warnings(parallelpix_m7_tests)
 
     add_test(NAME parallelpix_m7_tests COMMAND parallelpix_m7_tests)
+
+    if(PARALLELPIX_HAS_CUDA)
+        add_executable(parallelpix_m6_tests
+            tests/cpp/test_main.cpp
+            tests/cpp/cuda/test_faults.cpp
+            tests/cpp/cuda/test_processor.cpp
+            tests/cpp/cuda/test_runtime.cpp
+        )
+        target_include_directories(parallelpix_m6_tests
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/sequential
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda
+        )
+        target_link_libraries(parallelpix_m6_tests
+            PRIVATE
+                parallelpix_cuda
+                parallelpix_sequential
+        )
+        parallelpix_enable_warnings(parallelpix_m6_tests)
+
+        add_test(NAME parallelpix_m6_tests COMMAND parallelpix_m6_tests)
+    endif()
 
     if(WIN32)
         find_program(PARALLELPIX_POWERSHELL

@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from tools.parallelpix_dashboard.models import BenchmarkRequest, RunMode, normalize_backends
-from tools.parallelpix_dashboard.sidebar import parse_positive_integer_list
+from tools.parallelpix_dashboard.sidebar import (
+    measurement_schedule,
+    parse_positive_integer_list,
+)
 from tools.parallelpix_dashboard.validation import validate_request
 
 
@@ -68,6 +71,11 @@ def test_free_numeric_matrix_input_parses_and_deduplicates() -> None:
 
     assert values == ()
     assert error == "invalid"
+
+
+def test_measurement_schedule_is_fixed_for_all_configurations() -> None:
+    assert measurement_schedule(False) == (2, 5)
+    assert measurement_schedule(True) == (0, 1)
 
 
 def test_demo_request_does_not_require_local_paths(tmp_path: Path) -> None:

@@ -35,6 +35,7 @@ enum class ProcessingIssueCode
     InvalidImage,
     InvalidWatermark,
     WatermarkDoesNotFit,
+    BackendFailure,
 };
 
 struct ProcessingIssue
@@ -56,8 +57,24 @@ struct BatchProcessingResult
     }
 };
 
+struct BatchPreparationResult
+{
+    std::optional<std::vector<CropRegion>> crops;
+    std::vector<ProcessingIssue> issues;
+
+    [[nodiscard]] bool ok() const noexcept
+    {
+        return crops.has_value();
+    }
+};
+
 [[nodiscard]] bool is_valid_processing_config(
     const ProcessingConfig& config) noexcept;
+
+[[nodiscard]] BatchPreparationResult prepare_processing_batch(
+    const std::vector<Image>& images,
+    const Watermark& watermark,
+    const ProcessingConfig& config);
 
 [[nodiscard]] std::optional<CropRegion> compute_center_crop(
     std::uint32_t input_width,

@@ -76,7 +76,7 @@ Controller 验证：
 - 只要存在成功项，就必须提供结果 CSV 路径；
 - 摘要矛盾、未捕获异常或未知失败统一视为内部失败。
 
-M2 初始阶段使用 `ControllerOnlyPipeline` 防止伪造成功。M7 已将具体工厂拆入 `parallelpix_benchmark`：Sequential 可真实运行，未注册的 OpenMP/CUDA 配置返回跳过；M2 的 `IBenchmarkPipeline` 和 Controller 校验规则保持不变。
+M2 初始阶段使用 `ControllerOnlyPipeline` 防止伪造成功。M7 已将具体工厂拆入 `parallelpix_benchmark`：Sequential 与 CUDA 可真实运行，未注册的 OpenMP 或运行时不可用的 CUDA 配置返回跳过；M2 的 `IBenchmarkPipeline` 和 Controller 校验规则保持不变。
 
 ## 日志与退出码
 

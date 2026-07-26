@@ -69,7 +69,10 @@ def load_trajectory_samples(result_csv: Path, run_id: str) -> list[dict[str, obj
 
 
 def trajectory_chart(
-    samples: list[dict[str, object]], language: Language, *, window: int = 200
+    samples: list[dict[str, object]],
+    language: Language,
+    *,
+    window: int = 200,
 ) -> go.Figure | None:
     if not samples:
         return None
@@ -86,16 +89,21 @@ def trajectory_chart(
             "configuration": tr("configuration", language),
         },
     )
-    latest = int(data["processed"].max())
+    active_sample = data.iloc[-1]
+    latest = int(active_sample["processed"])
+    active_revision = (
+        f"trajectory-{active_sample['run_id']}-"
+        f"{active_sample['configuration']}"
+    )
     figure.update_xaxes(range=[max(0, latest - window), latest])
     figure.update_layout(
-        title=tr("chart_live_trajectory", language),
+        title=tr("chart_completed_trajectory", language),
         height=300,
         margin=dict(l=48, r=16, t=48, b=44),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#CBD5E1"),
-        uirevision="trajectory",
+        uirevision=active_revision,
     )
     figure.update_xaxes(gridcolor="#243247", zerolinecolor="#334155")
     figure.update_yaxes(gridcolor="#243247", zerolinecolor="#334155")

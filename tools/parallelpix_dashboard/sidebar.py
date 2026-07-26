@@ -12,6 +12,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MAX_UINT32 = 2**32 - 1
 
 
+def measurement_schedule(measure_cold_start: bool) -> tuple[int, int]:
+    return (0, 1) if measure_cold_start else (2, 5)
+
+
 def _project_path(value: str) -> Path:
     path = Path(value).expanduser()
     return path if path.is_absolute() else PROJECT_ROOT / path
@@ -77,7 +81,7 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
 
     cli_path = st.sidebar.text_input(
         tr("cli_executable", language),
-        value="build/m7/Release/parallelpix.exe",
+        value="build/m6-cuda-vs/Release/parallelpix.exe",
         disabled=mode == RunMode.DEMO,
         key="cli_path",
     )
@@ -181,10 +185,7 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
         disabled=mode == RunMode.DEMO,
     )
     measure_cold_start = measurement_mode == "cold_start"
-    repetitions = 1 if measure_cold_start else int(
-        st.sidebar.number_input(tr("measured_repetitions", language), min_value=5,
-            max_value=30, value=5, step=1, key="repetitions")
-    )
+    warmups, repetitions = measurement_schedule(measure_cold_start)
     st.sidebar.caption(
         tr("cold_start_caption", language)
         if measure_cold_start else tr("warmup_caption", language)
@@ -209,7 +210,7 @@ def render_sidebar(language: Language) -> tuple[BenchmarkRequest, bool]:
         thread_counts=thread_counts,
         cuda_batch_sizes=cuda_batch_sizes,
         repetitions=repetitions,
-        warmups=0 if measure_cold_start else 2,
+        warmups=warmups,
         input_errors=tuple(
             error
             for error in (image_counts_error, thread_counts_error, cuda_batch_sizes_error)

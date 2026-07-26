@@ -25,6 +25,8 @@ def make_request(tmp_path: Path) -> BenchmarkRequest:
         image_counts=(1, 50),
         thread_counts=(),
         cuda_batch_sizes=(),
+        warmups=0,
+        repetitions=1,
         measure_cold_start=True,
     )
 

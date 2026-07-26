@@ -159,11 +159,14 @@ m2::WorkflowSummary run_benchmark_plan(
     preflight_batch.images.reset();
 
     std::map<m2::Backend, IBackendExecutor*> executor_by_backend;
+    std::map<m2::Backend, BackendAvailability> availability_by_backend;
     for (auto* executor : executors)
     {
         if (executor != nullptr)
         {
             executor_by_backend.emplace(executor->backend(), executor);
+            availability_by_backend.emplace(
+                executor->backend(), executor->availability());
         }
     }
 
@@ -191,6 +194,22 @@ m2::WorkflowSummary run_benchmark_plan(
                 m2::FailureCategory::BackendUnavailable,
                 detail::backend_name(experiment.backend) +
                     " backend is not available in this build.");
+            continue;
+        }
+
+        const auto availability =
+            availability_by_backend.find(experiment.backend);
+        if (availability != availability_by_backend.end() &&
+            !availability->second.available)
+        {
+            ++summary.skipped;
+            add_issue(
+                summary,
+                m2::FailureCategory::BackendUnavailable,
+                availability->second.message.empty()
+                    ? detail::backend_name(experiment.backend) +
+                        " backend is unavailable at runtime."
+                    : availability->second.message);
             continue;
         }
 
