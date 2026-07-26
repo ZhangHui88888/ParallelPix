@@ -53,6 +53,20 @@ std::optional<std::uint32_t> parse_positive_integer(std::string_view value)
     return parsed;
 }
 
+std::optional<std::uint32_t> parse_nonnegative_integer(std::string_view value)
+{
+    const auto cleaned = trim(value);
+    std::uint32_t parsed = 0;
+    const auto result = std::from_chars(
+        cleaned.data(), cleaned.data() + cleaned.size(), parsed);
+    if (cleaned.empty() || result.ec != std::errc{} ||
+        result.ptr != cleaned.data() + cleaned.size())
+    {
+        return std::nullopt;
+    }
+    return parsed;
+}
+
 std::variant<std::vector<std::uint32_t>, CliError> parse_positive_list(
     std::string_view value,
     std::string_view option)
@@ -192,6 +206,7 @@ CliParseResult parse_cli(const std::vector<std::string_view>& arguments)
     };
     OptionMap values;
     bool append = false;
+    bool cold_start = false;
 
     for (std::size_t index = 1; index < arguments.size(); ++index)
     {
@@ -203,6 +218,15 @@ CliParseResult parse_cli(const std::vector<std::string_view>& arguments)
                 return error("Duplicate option: --append.");
             }
             append = true;
+            continue;
+        }
+        if (option == "--cold-start")
+        {
+            if (cold_start)
+            {
+                return error("Duplicate option: --cold-start.");
+            }
+            cold_start = true;
             continue;
         }
         if (value_options.find(option) == value_options.end())
@@ -286,14 +310,16 @@ CliParseResult parse_cli(const std::vector<std::string_view>& arguments)
         cuda_batch_sizes = std::get<std::vector<std::uint32_t>>(parsed);
     }
 
-    const auto warmups = parse_positive_integer(values.at("--warmups"));
+    const auto warmups = parse_nonnegative_integer(values.at("--warmups"));
     if (!warmups)
     {
-        return error("--warmups must be a positive 32-bit integer.");
+        return error("--warmups must be a non-negative 32-bit integer.");
     }
-    if (*warmups != 2)
+    if ((!cold_start && *warmups != 2) || (cold_start && *warmups != 0))
     {
-        return error("--warmups must be exactly 2.");
+        return error(cold_start
+            ? "--cold-start requires --warmups 0."
+            : "--warmups must be exactly 2.");
     }
 
     const auto repetitions = parse_positive_integer(values.at("--repetitions"));
@@ -301,9 +327,11 @@ CliParseResult parse_cli(const std::vector<std::string_view>& arguments)
     {
         return error("--repetitions must be a positive 32-bit integer.");
     }
-    if (*repetitions < 5)
+    if ((!cold_start && *repetitions < 5) || (cold_start && *repetitions != 1))
     {
-        return error("--repetitions must be at least 5.");
+        return error(cold_start
+            ? "--cold-start requires --repetitions 1."
+            : "--repetitions must be at least 5.");
     }
 
     const auto result_csv = std::filesystem::u8path(values.at("--csv"));
@@ -323,6 +351,7 @@ CliParseResult parse_cli(const std::vector<std::string_view>& arguments)
         std::move(cuda_batch_sizes),
         *warmups,
         *repetitions,
+        cold_start,
         append ? CsvMode::Append : CsvMode::Overwrite,
     };
 }

@@ -23,6 +23,33 @@ def apply_styles() -> None:
             background: var(--pp-bg);
         }
 
+        .pp-running-activity {
+            display: none;
+        }
+
+        [data-testid="stMain"]:has(.pp-running-activity)
+        [data-testid="stMainBlockContainer"] {
+            animation: pp-dashboard-breathe 2.8s ease-in-out infinite;
+            transform-origin: center top;
+            will-change: filter;
+        }
+
+        @keyframes pp-dashboard-breathe {
+            0%, 100% {
+                filter: brightness(1);
+            }
+            50% {
+                filter: brightness(1.075);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            [data-testid="stMain"]:has(.pp-running-activity)
+            [data-testid="stMainBlockContainer"] {
+                animation: none;
+            }
+        }
+
         [data-testid="stHeader"] {
             background: transparent;
             pointer-events: none;
@@ -143,6 +170,7 @@ def apply_styles() -> None:
         .st-key-run_status,
         .st-key-run_context,
         .st-key-preview_workspace,
+        .st-key-measured_overview_workspace,
         [class*="st-key-empty_results_"] {
             border: 1px solid var(--pp-border);
             border-radius: 8px;
@@ -152,6 +180,14 @@ def apply_styles() -> None:
         .st-key-run_status {
             padding: 0.7rem 0.9rem;
             margin: 0;
+        }
+
+        .st-key-live_run_console [data-testid="stCode"],
+        .st-key-run_status [data-testid="stCode"] {
+            height: 18rem;
+            max-height: 18rem;
+            overflow-y: auto;
+            overscroll-behavior: contain;
         }
 
         .st-key-matrix_summary {
@@ -180,6 +216,20 @@ def apply_styles() -> None:
         .st-key-preview_workspace {
             min-height: 44.5rem;
             padding: 0.9rem 1rem 0.85rem;
+        }
+
+        .st-key-measured_overview_workspace {
+            padding: 0.75rem 1rem;
+        }
+
+        .st-key-overview_empty_focus {
+            min-height: 15.3rem;
+            display: flex;
+            align-items: center;
+            padding: 0.75rem;
+            border: 1px dashed #3a4b62;
+            border-radius: 6px;
+            background: color-mix(in srgb, var(--pp-bg) 70%, transparent);
         }
 
         .st-key-preview_workspace h3 {

@@ -34,6 +34,7 @@ struct BenchmarkRequest
     std::vector<std::uint32_t> cuda_batch_sizes;
     std::uint32_t warmups = 2;
     std::uint32_t repetitions = 5;
+    bool cold_start = false;
     CsvMode csv_mode = CsvMode::Overwrite;
 };
 

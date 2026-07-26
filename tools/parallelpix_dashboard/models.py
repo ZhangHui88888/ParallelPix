@@ -46,6 +46,7 @@ class BenchmarkRequest:
     warmups: int = 2
     repetitions: int = 5
     input_errors: tuple[str, ...] = ()
+    measure_cold_start: bool = False
 
     @property
     def normalized_backends(self) -> tuple[str, ...]:
@@ -72,6 +73,8 @@ class BenchmarkRequest:
             "--csv",
             str(self.result_csv),
         ]
+        if self.measure_cold_start:
+            args.append("--cold-start")
         if self.thread_counts:
             args.extend(["--threads", ",".join(map(str, self.thread_counts))])
         if self.cuda_batch_sizes:

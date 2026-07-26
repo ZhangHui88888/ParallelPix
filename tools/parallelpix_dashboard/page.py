@@ -5,12 +5,14 @@ from pathlib import Path
 import streamlit as st
 
 from .components import render_matrix_summary, render_saved_status
+from .cold_start import ColdStartProbeRunner
 from .i18n import Language, localize_message, tr
 from .models import BenchmarkRequest, RunMode, RunStatus
 from .results import ResultsError, load_results
 from .runners import DemoRunner, SubprocessRunner
 from .sidebar import render_sidebar
 from .styles import apply_styles
+from .trajectory import parse_progress_event, save_trajectory_samples, trajectory_chart
 from .validation import validate_request
 from .views import render_results
 
@@ -30,6 +32,7 @@ def _initialize_state() -> None:
         "results_are_demo": False,
         "new_run_ids": (),
         "select_new_run_after_execute": False,
+        "trajectory_samples": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -61,28 +64,60 @@ def _execute(request: BenchmarkRequest, language: Language) -> None:
         return
 
     logs: list[str] = []
+    st.session_state.trajectory_samples = []
     st.session_state.run_status = RunStatus.RUNNING.value
+    activity_marker = st.empty()
+    activity_marker.markdown(
+        '<span class="pp-running-activity" aria-hidden="true"></span>',
+        unsafe_allow_html=True,
+    )
     status_box = st.status(tr("benchmark_running", language), expanded=True)
     with status_box:
-        log_placeholder = st.empty()
+        with st.container(height=288, key="live_run_console"):
+            log_placeholder = st.empty()
+        trajectory_placeholder = st.empty()
 
     def emit_log(line: str) -> None:
         logs.append(line)
         del logs[:-MAX_LOG_LINES]
         log_placeholder.code("\n".join(logs), language="text")
+        event = parse_progress_event(line)
+        if event is not None:
+            st.session_state.trajectory_samples.append(event)
+            figure = trajectory_chart(st.session_state.trajectory_samples, language)
+            if figure is not None:
+                trajectory_placeholder.plotly_chart(
+                    figure, width="stretch", config={"displayModeBar": False}
+                )
 
     runner = (
         DemoRunner(DEMO_RESULTS)
         if request.mode == RunMode.DEMO
         else SubprocessRunner(working_directory=PROJECT_ROOT)
     )
-    result = runner.run(request, emit_log)
+    try:
+        result = runner.run(request, emit_log)
+        if (
+            request.measure_cold_start
+            and request.mode == RunMode.LOCAL_CLI
+            and result.status in {RunStatus.SUCCESS, RunStatus.PARTIAL}
+            and result.run_ids
+        ):
+            measurements = ColdStartProbeRunner(PROJECT_ROOT).run(
+                request, result.run_ids, emit_log
+            )
+            emit_log(f"[COLD START] Recorded {len(measurements)} configuration(s).")
+    finally:
+        activity_marker.empty()
     st.session_state.run_status = result.status.value
     st.session_state.run_message = result.message
     st.session_state.run_logs = logs[-MAX_LOG_LINES:]
     st.session_state.new_run_ids = result.run_ids
     st.session_state.select_new_run_after_execute = bool(result.run_ids)
     st.session_state.results_are_demo = request.mode == RunMode.DEMO
+
+    if result.csv_path is not None:
+        save_trajectory_samples(result.csv_path, st.session_state.trajectory_samples)
 
     if result.status in {RunStatus.SUCCESS, RunStatus.PARTIAL} and result.csv_path:
         try:

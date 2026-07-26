@@ -43,7 +43,8 @@ public:
         const std::vector<parallelpix::Image>& images,
         const parallelpix::Watermark&,
         const parallelpix::ProcessingConfig&,
-        const ExperimentSpec&) override
+        const ExperimentSpec&,
+        const parallelpix::benchmark::ProgressSink&) override
     {
         ++calls;
         auto outputs = images;
@@ -76,7 +77,8 @@ public:
         const std::vector<parallelpix::Image>&,
         const parallelpix::Watermark&,
         const parallelpix::ProcessingConfig&,
-        const ExperimentSpec&) override
+        const ExperimentSpec&,
+        const parallelpix::benchmark::ProgressSink&) override
     {
         ++calls;
         parallelpix::BatchProcessingResult result;
