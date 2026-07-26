@@ -4,7 +4,7 @@
 
 ## 构建与运行
 
-### C++ CLI、M3/M4 与 M7 Benchmark
+### C++ CLI、M3/M4/M6 与 M7 Benchmark
 
 项目通过 vcpkg manifest 固定 OpenCV 的 JPEG/PNG 最小依赖。先安装或使用 Visual Studio 2022 自带的 vcpkg，并在 Visual Studio 2022 Developer PowerShell 中执行：
 
@@ -17,7 +17,23 @@ ctest --test-dir build/m7 -C Debug --output-on-failure
 .\build\m7\Debug\parallelpix.exe --help
 ```
 
-构建会生成 M2 CLI、M3 图片 I/O、M4 Sequential、M7 Benchmark 静态库及对应测试。Sequential 已接入真实 Pipeline，可执行预热、正式测量、PNG 验证、统计并写入 M1 所需的 27 列 CSV。OpenMP/CUDA 尚未实现；混合请求会保留 Sequential 结果、跳过不可用后端并返回部分成功。
+构建会生成 M2 CLI、M3 图片 I/O、M4 Sequential、M7 Benchmark 静态库及对应测试。默认 `PARALLELPIX_CUDA=AUTO`：检测到 CUDA Toolkit 时同时构建 M6，未检测到时生成 CPU-only 工程。Sequential/CUDA 已接入真实 Pipeline，可执行预热、正式测量、PNG 验证、统计并写入 M1 所需的 27 列 CSV。OpenMP 尚未实现；混合请求会保留 Sequential/CUDA 结果、跳过 OpenMP 并返回部分成功。
+
+目标 RTX 50 系 Blackwell GPU 使用 CUDA Toolkit 12.8 和架构 120。显式 CUDA 构建示例：
+
+```powershell
+$env:VCPKG_ROOT = "<vcpkg-root>"
+$env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
+cmake -S . -B build/m6-cuda -G "Visual Studio 17 2022" -A x64 `
+  -T "cuda=$env:CUDA_PATH" `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  -DPARALLELPIX_CUDA=ON `
+  -DCMAKE_CUDA_ARCHITECTURES=120
+cmake --build build/m6-cuda --config Release
+ctest --test-dir build/m6-cuda -C Release --output-on-failure
+```
+
+`PARALLELPIX_CUDA=ON` 在缺少 Toolkit 时配置失败；`OFF` 明确生成 CPU-only 工程。Windows CUDA 构建会把所需 `cudart64_12.dll` 放到可执行文件目录。
 
 ### M1 本地仪表板
 
@@ -29,7 +45,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m streamlit run tools/dashboard.py
 ```
 
-默认进入明确标记的 Demo 模式，不需要已编译的 C++ CLI。切换到 `Local CLI` 后，页面会按 [M1 设计契约](docs/design/M1本地性能仪表板设计.md) 启动 M2/M7 真实 Benchmark。
+默认进入明确标记的 Demo 模式，不需要已编译的 C++ CLI。切换到 `Local CLI` 后，页面默认使用 `build/m6-cuda-vs/Release/parallelpix.exe`，并按 [M1 设计契约](docs/design/M1本地性能仪表板设计.md) 启动 M2/M7 真实 Benchmark。运行期间只显示低频节流的文本状态；处理轨迹在计时结束后记录，并在 Benchmark 完成后作为静态结果展示，不提供实时绘图模式。
 
 Windows 下也可以直接双击根目录的 `start_dashboard.bat`：脚本会创建或复用 `.venv`、修复失效的 Python 3.12 虚拟环境、安装固定版本依赖并启动页面。只检查和修复运行环境而不启动页面时，可执行：
 
@@ -48,7 +64,7 @@ Windows 下也可以直接双击根目录的 `start_dashboard.bat`：脚本会�
 
 - **技术栈**：C++17、OpenMP、CUDA、OpenCV、CMake、Python、Streamlit
 - **架构模式**：本地 Streamlit 仪表板 + C++ CLI Controller + 可替换计算后端
-- **核心模块**：M1 本地仪表板、M2 CLI Controller、M3 图片 I/O、M4 Sequential、M5 OpenMP、M6 CUDA、M7 验证与 Benchmark
+- **核心模块**：M1 本地仪表板、M2 CLI Controller、M3 图片 I/O、M4 Sequential、M5 OpenMP、M6 CUDA、M7 验证与 Benchmark，以及计划中的 M8 CPU-GPU Hybrid
 - **详细设计**：见 [`docs/tech/技术架构文档.md`](docs/tech/技术架构文档.md)
 
 ```mermaid
@@ -59,9 +75,12 @@ flowchart LR
     B --> M4["M4 Sequential"]
     B --> M5["M5 OpenMP"]
     B --> M6["M6 CUDA"]
+    M5 --> M8["M8 CPU-GPU Hybrid<br/>计划"]
+    M6 --> M8
     M4 --> M7["M7 验证与 Benchmark"]
     M5 --> M7
     M6 --> M7
+    M8 --> M7
     M7 --> R["结果 CSV"]
     R --> M1
 ```
@@ -78,14 +97,11 @@ M2 CLI Controller 与任务编排
 M3 图片数据 I/O
         │ 读取、校验、解码图片
         ▼
-┌───────────────────────────────────────────┐
-│                 处理后端                  │
-│  M4 Sequential  │  M5 OpenMP  │  M6 CUDA │
-└────────┬────────┴────────┬────────┴───────┘
-         │                 │
-         └────────┬────────┘
-                  ▼
-       M7 验证、统计与 Benchmark
+M4 Sequential ───────────────────────┐
+M5 OpenMP ─────┬─────────────────────┤
+M6 CUDA ───────┴→ M8 Hybrid（计划）──┤
+                                      ▼
+                         M7 验证、统计与 Benchmark
                   │ 生成结果 CSV
                   ▼
              results/*.csv
@@ -103,8 +119,10 @@ M3 图片数据 I/O
 - **M2 CLI Controller**：按 `cli`、`planning`、`controller`、`pipeline` 四个子模块拆分；实现位于 `src/`，公共接口位于 `include/parallelpix/`。
 - **M3 图片数据 I/O**：已作为独立 `parallelpix_io` 库实现并由 M7 真实 Pipeline 调用。
 - **M4 Sequential**：公共像素语义和单线程后端已实现并注册到 M7。
-- **M7 Benchmark Core**：已完成预检、预热、计时、PNG 验证、统计、原子 CSV 和后端降级。
-- **M5～M6**：目录骨架已就位，待实现并注册到 M7 执行器契约。
+- **M6 CUDA**：已完成条件构建、共享预检、连续批处理、融合 Kernel、显存复用/回退和分阶段计时。
+- **M7 Benchmark Core**：已完成预检、预热、计时、PNG 验证、统计、原子 CSV，以及 Sequential/CUDA 执行器与后端降级。
+- **M5 OpenMP**：目录骨架已就位，待实现并注册到 M7 执行器契约。
+- **M8 CPU-GPU Hybrid**：设计与实施计划已建立；等待 M5 完成后再并发组合 OpenMP/CUDA，不属于当前已实现功能。
 
 ### 当前实际目录
 
@@ -127,7 +145,7 @@ ParallelPix/
 │       ├── io/image_io.hpp          # M3 扫描、解码、批次和 PNG 写出接口
 │       ├── sequential/processor.hpp # M4 单线程批处理接口
 │       ├── openmp/                  # M5 OpenMP 后端接口（待实现）
-│       ├── cuda/                    # M6 CUDA 后端接口（待实现）
+│       ├── cuda/processor.hpp       # M6 CUDA 后端公共接口
 │       └── benchmark/               # M7 后端、验证、统计、报告和 Runner 接口
 ├── src/
 │   ├── cli/
@@ -140,7 +158,7 @@ ParallelPix/
 │   ├── io/{catalog,decode,encode}/ # M3 扫描、解码、批次和 PNG 输出
 │   ├── sequential/processor/       # M4 单线程处理流水线
 │   ├── openmp/{scheduling,processor}/ # M5 调度和并行处理（待实现）
-│   ├── cuda/{runtime,transfer,kernels}/ # M6 运行时、传输和 Kernel（待实现）
+│   ├── cuda/{runtime,processor,kernels}/ # M6 运行时、批处理和融合 Kernel
 │   └── benchmark/{runner,validation,reporting,statistics}/ # 已实现的 M7
 ├── tools/
 │   ├── dashboard.py                # M1 Streamlit 启动入口
@@ -168,7 +186,7 @@ ParallelPix/
 │   │   ├── io/                      # M3 I/O 正常与异常测试
 │   │   ├── sequential/              # M4 基线与 M3 集成测试
 │   │   ├── openmp/                  # M5 并行一致性与线程数测试（待实现）
-│   │   ├── cuda/                    # M6 Kernel、传输与设备降级测试（待实现）
+│   │   ├── cuda/                    # M6 像素、运行时、显存回退和设备测试
 │   │   ├── benchmark/               # M7 验证、指标、Runner 和 CSV 测试
 │   │   └── test_main.cpp、test_support.hpp # 共享 C++ 测试入口与断言
 │   ├── powershell/assert_cli_process.ps1 # M2 真实进程断言
@@ -190,19 +208,20 @@ ParallelPix/
 | M3 图片数据 I/O | `src/io/{catalog,decode,encode}/`、`include/parallelpix/{common,io}/` | `tests/cpp/io/`、`tests/fixtures/{images,watermarks}/` | 已实现并由 M7 Pipeline 调用 |
 | M4 Sequential 基线 | `src/common/{geometry,resize,effects}/`、`src/sequential/processor/`、`include/parallelpix/{common,sequential}/` | `tests/cpp/{common,sequential}/` | 已实现、接入 M7 并作为性能与正确性基准 |
 | M5 OpenMP 后端 | `src/openmp/{scheduling,processor}/`、`include/parallelpix/openmp/` | `tests/cpp/openmp/` | 目录已就位；待实现、未接入构建 |
-| M6 CUDA 后端 | `src/cuda/{runtime,transfer,kernels}/`、`include/parallelpix/cuda/` | `tests/cpp/cuda/` | 目录已就位；待实现、未接入构建 |
-| M7 验证与 Benchmark | `src/benchmark/{runner,validation,reporting,statistics}/`、`include/parallelpix/benchmark/` | `tests/cpp/benchmark/`、真实进程测试 | Core 已实现；待 M5/M6 注册后端完成三后端闭环 |
+| M6 CUDA 后端 | `src/cuda/{runtime,processor,kernels}/`、`include/parallelpix/cuda/` | `tests/cpp/cuda/` | 已实现并接入 M7；支持分阶段计时和显存减半重试 |
+| M7 验证与 Benchmark | `src/benchmark/{runner,validation,reporting,statistics}/`、`include/parallelpix/benchmark/` | `tests/cpp/benchmark/`、真实进程测试 | Core 与 CUDA 接入已完成；待 M5 完成三后端闭环 |
+| M8 CPU-GPU Hybrid | 计划落位 `src/hybrid/`、`include/parallelpix/hybrid/` | 计划新增 `tests/cpp/hybrid/` | 已完成设计；等待 M5 |
 
 ### 后续模块的落位约定
 
-实现 M5～M6 时必须在既有目录中落位，不在 `src/cli/`、`src/controller/` 或模块外目录插入业务实现。共享像素语义继续放在 `common/`；后端仅调用公共模型并实现各自计算策略，再注册到 M7 `IBackendExecutor`。不得修改既有 CLI 与 27 列 CSV 契约。
+实现 M5 时必须在既有目录中落位，不在 `src/cli/`、`src/controller/` 或模块外目录插入业务实现。共享像素语义和批次预检继续放在 `common/`；后端仅调用公共模型并实现各自计算策略，再注册到 M7 `IBackendExecutor`。M5 不得修改既有 CLI 与27列 CSV 契约。M8 作为后续独立接口版本，按其设计受控新增 Hybrid 参数和第28列 `hybrid_cpu_share`，同时保持旧 CSV 可读。
 
 ## 编码约定
 
 - **Git**：不在 `main`/`master` 直接工作，使用 `feature/描述-MMDD` 分支
 - **文档**：项目文档统一维护在 `docs/`
 - **核心算法**：OpenCV 只用于解码、编码和内存容器，像素处理由项目自行实现
-- **测试**：按 M1～M7 模块维护正确性、异常和性能测试记录
+- **测试**：按 M1～M8 模块维护正确性、异常和性能测试记录
 
 ## 外部依赖
 
@@ -211,7 +230,7 @@ ParallelPix/
 | Visual Studio 2022、CMake、vcpkg | 构建 C++17 模块并按 manifest 获取依赖 |
 | OpenCV core/imgcodecs | M3 图片解码、编码和临时数据容器 |
 | OpenMP | 多核 CPU 并行处理 |
-| CUDA Toolkit | GPU 并行处理与计时 |
+| CUDA Toolkit 12.8 | Blackwell GPU 并行处理、Runtime 与 Event 计时 |
 | Streamlit、Pandas、Plotly | 本地性能仪表板与图表 |
 
 ## 文档导航

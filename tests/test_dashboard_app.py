@@ -45,6 +45,34 @@ def test_image_count_is_a_single_positive_number() -> None:
     assert app.session_state["image_count_input"] == 50
 
 
+def test_dashboard_does_not_offer_live_trajectory_mode() -> None:
+    app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
+    app.selectbox(key="run_mode").set_value("Local CLI").run()
+
+    assert not any(radio.key == "trajectory_mode" for radio in app.radio)
+    assert not any(
+        caption.value == "Live dynamic trajectory" for caption in app.caption
+    )
+
+
+def test_dashboard_uses_fixed_steady_or_single_run_schedules() -> None:
+    app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
+    app.selectbox(key="run_mode").set_value("Local CLI").run()
+
+    assert not any(
+        number_input.key == "repetitions" for number_input in app.number_input
+    )
+    measurement = app.radio(key="measurement_mode")
+    assert measurement.value == "steady"
+    assert measurement.options == [
+        "Steady-state benchmark",
+        "Single-run cold start",
+    ]
+
+    measurement.set_value("cold_start").run()
+    assert app.session_state["measurement_mode"] == "cold_start"
+
+
 def test_demo_run_loads_metrics_and_history() -> None:
     app = AppTest.from_file(str(DASHBOARD), default_timeout=10).run()
 

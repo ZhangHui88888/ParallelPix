@@ -16,6 +16,11 @@ public:
     BenchmarkPipeline()
     {
         executors_.push_back(benchmark::make_sequential_executor());
+        auto cuda = benchmark::make_cuda_executor();
+        if (cuda)
+        {
+            executors_.push_back(std::move(cuda));
+        }
     }
 
     WorkflowSummary execute(

@@ -10,7 +10,7 @@
 - OpenCV 4.12.0，仅用于 M3 解码和 PNG 编码。
 - `tests/fixtures/` 中的本地图片和 RGBA 水印。
 - 使用独立 `build/m7`，通过 vcpkg toolchain 配置。
-- OpenMP/CUDA 尚未实现，不是 M7 Core 测试的前置条件。
+- OpenMP 尚未实现；CUDA-enabled 测试额外使用 CUDA Toolkit 12.8 和目标 GPU。
 
 ## 请求与响应
 
@@ -31,16 +31,16 @@
 | 指标公式 | Sequential 与有效 OpenMP 替身 | 吞吐量、加速比和线程效率关系正确 | 与预期一致 | 通过 |
 | 验证失败记录 | 注入错误 OpenMP 输出 | CSV 保留 false 行，无加速比 | 与预期一致 | 通过 |
 | 基准失败依赖 | Sequential 失败 | 同规模并行配置跳过 | 与预期一致 | 通过 |
-| 后端不可用 | 未注册 CUDA | 配置跳过，已有结果不受影响 | 与预期一致 | 通过 |
+| 后端不可用 | CUDA 运行时不可用替身 | 配置跳过且不调用执行器，已有结果不受影响 | 与预期一致 | 通过 |
 | 输入失败 | 不存在的目录 | 全局 Input 失败，不调用后端 | 与预期一致 | 通过 |
 | 真实 Sequential | Unicode 路径、1 张图片 | 退出 0，生成 1 行 CSV 和 1 张 PNG | 与预期一致 | 通过 |
-| 混合真实进程 | Sequential+OpenMP+CUDA | Sequential 成功，另两项跳过，退出 2 | 与预期一致 | 通过 |
+| 混合真实进程 | Sequential+OpenMP+CUDA | Sequential/CUDA 成功，OpenMP 跳过，退出 2 | 与预期一致 | 通过 |
 | M1 兼容 | M7 真实 CSV | `load_results()` 可读取并识别新运行 | 与预期一致 | 通过 |
 
 ## 验证结果
 
-- M7 C++ 行为测试：14 项通过。
-- Debug CTest：M2～M7 聚合测试与真实进程测试，9/9 通过。
-- Release CTest：9/9 通过。
-- M1 Python 回归：26 项通过；并已读取 Release CLI 生成的真实 M7 CSV。
+- M7 行为测试覆盖 CUDA 可用性、实际批大小和三段时间。
+- CUDA Debug CTest：M2～M7、M6 与真实进程测试，10/10 通过。
+- CUDA Release CTest：10/10 通过。
+- M1 Python 回归可读取 Release CLI 生成的真实 CUDA CSV 并绘制 CUDA 图表。
 - 性能自动化不设置固定加速倍数；正式性能结论必须来自 Release 构建。

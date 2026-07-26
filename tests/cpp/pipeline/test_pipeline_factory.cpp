@@ -20,7 +20,7 @@ using parallelpix::m2::make_benchmark_pipeline;
 using parallelpix::test::io::TemporaryDirectory;
 using parallelpix::test::io::copy_fixture;
 
-PP_TEST("the M7 pipeline runs sequential and skips unavailable backends")
+PP_TEST("the M7 pipeline runs available backends and skips unavailable ones")
 {
     TemporaryDirectory temporary;
     const auto input = temporary.path() / L"输入";
@@ -41,6 +41,7 @@ PP_TEST("the M7 pipeline runs sequential and skips unavailable backends")
         {1},
         2,
         5,
+        false,
         CsvMode::Overwrite,
     };
     const auto plan = build_benchmark_plan(request);
@@ -49,12 +50,15 @@ PP_TEST("the M7 pipeline runs sequential and skips unavailable backends")
     const auto summary = pipeline->execute(plan, [](const auto&) {});
 
     PP_REQUIRE_EQ(summary.planned, std::size_t{3});
-    PP_REQUIRE_EQ(summary.succeeded, std::size_t{1});
     PP_REQUIRE_EQ(summary.failed, std::size_t{0});
-    PP_REQUIRE_EQ(summary.skipped, std::size_t{2});
+    PP_REQUIRE(summary.succeeded >= std::size_t{1});
+    PP_REQUIRE(summary.succeeded <= std::size_t{2});
+    PP_REQUIRE_EQ(
+        summary.succeeded + summary.skipped,
+        summary.planned);
     PP_REQUIRE_EQ(summary.csv_path, std::optional(csv));
     PP_REQUIRE(std::filesystem::is_regular_file(csv));
-    PP_REQUIRE_EQ(summary.issues.size(), std::size_t{2});
+    PP_REQUIRE_EQ(summary.issues.size(), summary.skipped);
     PP_REQUIRE(!summary.primary_failure.has_value());
 }
 

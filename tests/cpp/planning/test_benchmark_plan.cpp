@@ -28,6 +28,7 @@ BenchmarkRequest default_request()
         {1, 4, 8},
         2,
         5,
+        false,
         CsvMode::Append,
     };
 }

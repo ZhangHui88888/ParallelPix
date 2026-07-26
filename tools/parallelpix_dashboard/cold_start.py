@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import csv
-import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
-from .models import BenchmarkRequest, LogEmitter, RunStatus
-from .results import load_results
-from .runners import SubprocessRunner
+from .models import BenchmarkRequest
 
 
 COLD_START_COLUMNS = (
@@ -20,6 +17,8 @@ COLD_START_COLUMNS = (
     "image_count",
     "cold_start_cli_ms",
 )
+
+# Legacy per-configuration probe files remain readable for existing runs.
 
 
 @dataclass(frozen=True)
@@ -64,19 +63,6 @@ def _value(value: int | None) -> str:
     return "" if value is None else str(value)
 
 
-def _matches(row: pd.Series, configuration: ColdStartConfiguration) -> bool:
-    thread_count = None if pd.isna(row["thread_count"]) else int(row["thread_count"])
-    cuda_batch_size = (
-        None if pd.isna(row["cuda_batch_size"]) else int(row["cuda_batch_size"])
-    )
-    return (
-        row["backend"] == configuration.backend
-        and int(row["image_count"]) == configuration.image_count
-        and thread_count == configuration.thread_count
-        and cuda_batch_size == configuration.cuda_batch_size
-    )
-
-
 def record_cold_start_measurements(
     result_csv: Path,
     parent_run_ids: tuple[str, ...],
@@ -117,68 +103,3 @@ def load_cold_start_measurements(result_csv: Path) -> pd.DataFrame:
     for column in ("thread_count", "cuda_batch_size", "image_count", "cold_start_cli_ms"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
     return frame
-
-
-class ColdStartProbeRunner:
-    """Measure each configuration in a fresh child process without polluting CSV history."""
-
-    def __init__(self, working_directory: Path) -> None:
-        self.working_directory = working_directory
-
-    def run(
-        self,
-        request: BenchmarkRequest,
-        parent_run_ids: tuple[str, ...],
-        emit_log: LogEmitter,
-    ) -> tuple[ColdStartMeasurement, ...]:
-        measurements: list[ColdStartMeasurement] = []
-        configurations = cold_start_configurations(request)
-        with tempfile.TemporaryDirectory(prefix="parallelpix-cold-start-") as temporary:
-            root = Path(temporary)
-            for index, configuration in enumerate(configurations):
-                emit_log(
-                    "[COLD START] "
-                    f"{configuration.backend}, images={configuration.image_count} "
-                    f"({index + 1}/{len(configurations)})"
-                )
-                probe_request = replace(
-                    request,
-                    backends=(configuration.backend,),
-                    image_counts=(configuration.image_count,),
-                    thread_counts=(configuration.thread_count,)
-                    if configuration.thread_count is not None
-                    else (),
-                    cuda_batch_sizes=(configuration.cuda_batch_size,)
-                    if configuration.cuda_batch_size is not None
-                    else (),
-                    output_dir=root / f"output-{index}",
-                    result_csv=root / f"result-{index}.csv",
-                    measure_cold_start=False,
-                )
-                result = SubprocessRunner(working_directory=self.working_directory).run(
-                    probe_request,
-                    emit_log,
-                )
-                if result.status not in {RunStatus.SUCCESS, RunStatus.PARTIAL}:
-                    emit_log("[COLD START] Probe failed; configuration was not recorded.")
-                    continue
-                if result.cold_start_cli_ms is None or result.csv_path is None:
-                    continue
-                try:
-                    frame = load_results(result.csv_path)
-                except Exception:
-                    emit_log("[COLD START] Probe CSV was invalid; configuration was not recorded.")
-                    continue
-                matched = frame.loc[frame.apply(_matches, axis=1, configuration=configuration)]
-                if matched.empty or not matched["validation_passed"].all():
-                    emit_log("[COLD START] Probe did not produce a validated configuration.")
-                    continue
-                measurements.append(
-                    ColdStartMeasurement(configuration, result.cold_start_cli_ms)
-                )
-
-        if measurements:
-            record_cold_start_measurements(
-                request.result_csv, parent_run_ids, tuple(measurements)
-            )
-        return tuple(measurements)

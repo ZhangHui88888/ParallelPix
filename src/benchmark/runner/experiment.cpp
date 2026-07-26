@@ -79,6 +79,27 @@ std::string output_resolution(const ProcessingConfig& config)
         std::to_string(config.output_height);
 }
 
+std::optional<std::string> capture_effective_cuda_batch_size(
+    const BackendExecution& execution,
+    std::optional<std::uint32_t>& effective_batch_size)
+{
+    if (!execution.effective_cuda_batch_size ||
+        *execution.effective_cuda_batch_size == 0)
+    {
+        return std::string(
+            "CUDA executor did not provide a valid effective batch size.");
+    }
+    if (effective_batch_size &&
+        *effective_batch_size != *execution.effective_cuda_batch_size)
+    {
+        return std::string(
+            "CUDA executor changed the effective batch size within one "
+            "experiment.");
+    }
+    effective_batch_size = execution.effective_cuda_batch_size;
+    return std::nullopt;
+}
+
 }  // namespace
 
 ExperimentOutcome measure_experiment(
@@ -108,6 +129,26 @@ ExperimentOutcome measure_experiment(
             "Input image selection changed after benchmark preflight.");
     }
 
+    std::optional<std::uint32_t> effective_cuda_batch_size;
+    bool cuda_batch_adjustment_logged = false;
+    const auto log_cuda_batch_adjustment = [&] {
+        if (!cuda_batch_adjustment_logged &&
+            effective_cuda_batch_size &&
+            experiment.cuda_batch_size &&
+            *effective_cuda_batch_size !=
+                *experiment.cuda_batch_size)
+        {
+            emit(
+                log,
+                m2::LogLevel::Warning,
+                "cuda",
+                "Requested CUDA batch size " +
+                    std::to_string(*experiment.cuda_batch_size) +
+                    " was adjusted to " +
+                    std::to_string(*effective_cuda_batch_size) + '.');
+            cuda_batch_adjustment_logged = true;
+        }
+    };
     for (std::uint32_t warmup = 0; warmup < plan.warmups; ++warmup)
     {
         const auto execution = executor.execute(
@@ -117,6 +158,16 @@ ExperimentOutcome measure_experiment(
             return fail(
                 m2::FailureCategory::Processing,
                 "Warm-up failed: " + first_processing_issue(execution));
+        }
+        if (experiment.backend == m2::Backend::Cuda)
+        {
+            const auto issue = capture_effective_cuda_batch_size(
+                execution, effective_cuda_batch_size);
+            if (issue)
+            {
+                return fail(m2::FailureCategory::Internal, *issue);
+            }
+            log_cuda_batch_adjustment();
         }
     }
     warmup_batch.images.reset();
@@ -168,30 +219,14 @@ ExperimentOutcome measure_experiment(
             input_resolution = resolution_label(*batch.images);
         }
 
-        const auto compute_start = Clock::now();
+        std::vector<ProgressSample> progress_samples;
+        progress_samples.reserve(experiment.image_count);
         const ProgressSink progress = repetition == 0
-            ? [&log, &experiment, &metadata](const ProgressSample& sample) {
-                  if (log)
-                  {
-                      log({
-                          m2::LogLevel::Info,
-                          "trajectory",
-                          "backend=" + backend_name(experiment.backend) +
-                              " run_id=" + metadata.run_id +
-                              " thread_count=" + std::to_string(
-                                  experiment.thread_count.value_or(0)) +
-                              " cuda_batch_size=" + std::to_string(
-                                  experiment.cuda_batch_size.value_or(0)) +
-                              " image_count=" +
-                              std::to_string(experiment.image_count) +
-                              " processed=" +
-                              std::to_string(sample.processed_images) +
-                              " ms_per_image=" +
-                              std::to_string(sample.batch_ms_per_image),
-                      });
-                  }
+            ? [&progress_samples](const ProgressSample& sample) {
+                  progress_samples.push_back(sample);
               }
             : ProgressSink{};
+        const auto compute_start = Clock::now();
         auto execution = executor.execute(
             *batch.images, watermark, config, experiment, progress);
         const auto compute_end = Clock::now();
@@ -210,13 +245,27 @@ ExperimentOutcome measure_experiment(
                     m2::FailureCategory::Internal,
                     "CUDA executor did not provide phase timing.");
             }
+            const auto issue = capture_effective_cuda_batch_size(
+                execution, effective_cuda_batch_size);
+            if (issue)
+            {
+                return fail(m2::FailureCategory::Internal, *issue);
+            }
+            log_cuda_batch_adjustment();
             h2d_samples.push_back(execution.cuda_phase->h2d_ms);
             kernel_samples.push_back(execution.cuda_phase->kernel_ms);
             d2h_samples.push_back(execution.cuda_phase->d2h_ms);
         }
 
+        auto output_experiment = experiment;
+        if (experiment.backend == m2::Backend::Cuda)
+        {
+            output_experiment.cuda_batch_size =
+                effective_cuda_batch_size;
+        }
         const auto directory =
-            experiment_output_directory(plan.output_dir, metadata, experiment);
+            experiment_output_directory(
+                plan.output_dir, metadata, output_experiment);
         const auto written =
             write_outputs(directory, *execution.processing.images);
         if (!written.paths)
@@ -233,6 +282,29 @@ ExperimentOutcome measure_experiment(
             std::chrono::duration<double, std::milli>(
                 end_to_end_end - end_to_end_start)
                 .count());
+
+        if (log)
+        {
+            for (const auto& sample : progress_samples)
+            {
+                log({
+                    m2::LogLevel::Info,
+                    "trajectory",
+                    "backend=" + backend_name(experiment.backend) +
+                        " run_id=" + metadata.run_id +
+                        " thread_count=" + std::to_string(
+                            experiment.thread_count.value_or(0)) +
+                        " cuda_batch_size=" + std::to_string(
+                            experiment.cuda_batch_size.value_or(0)) +
+                        " image_count=" +
+                        std::to_string(experiment.image_count) +
+                        " processed=" +
+                        std::to_string(sample.processed_images) +
+                        " ms_per_image=" +
+                        std::to_string(sample.batch_ms_per_image),
+                });
+            }
+        }
 
         auto candidate = decode_paths(*written.paths);
         if (!candidate.images)
@@ -303,7 +375,9 @@ ExperimentOutcome measure_experiment(
     record.recorded_at_utc = metadata.recorded_at_utc;
     record.backend = backend_name(experiment.backend);
     record.thread_count = experiment.thread_count;
-    record.cuda_batch_size = experiment.cuda_batch_size;
+    record.cuda_batch_size = experiment.backend == m2::Backend::Cuda
+        ? effective_cuda_batch_size
+        : experiment.cuda_batch_size;
     record.image_count = experiment.image_count;
     record.input_resolution = input_resolution;
     record.output_resolution = output_resolution(config);

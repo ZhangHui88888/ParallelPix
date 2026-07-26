@@ -48,6 +48,41 @@ PP_TEST("processing configuration validates numeric and memory bounds")
     PP_REQUIRE(!parallelpix::is_valid_processing_config(config));
 }
 
+PP_TEST("shared batch preparation validates inputs and returns crops")
+{
+    const auto image = make_two_by_two_image();
+    parallelpix::Watermark watermark;
+    watermark.color = {
+        1,
+        1,
+        parallelpix::image_channel_count,
+        parallelpix::image_channel_count,
+        "watermark",
+        {20, 40, 60},
+    };
+    watermark.alpha = {255};
+
+    parallelpix::ProcessingConfig config;
+    config.output_width = 2;
+    config.output_height = 2;
+    config.watermark_margin = 0;
+
+    const auto prepared =
+        parallelpix::prepare_processing_batch({image}, watermark, config);
+    PP_REQUIRE(prepared.ok());
+    PP_REQUIRE_EQ(prepared.crops->size(), std::size_t{1});
+    PP_REQUIRE_EQ(prepared.crops->front().width, std::uint32_t{2});
+    PP_REQUIRE_EQ(prepared.crops->front().height, std::uint32_t{2});
+
+    watermark.alpha.clear();
+    const auto rejected =
+        parallelpix::prepare_processing_batch({image}, watermark, config);
+    PP_REQUIRE(!rejected.ok());
+    PP_REQUIRE_EQ(
+        rejected.issues.front().code,
+        parallelpix::ProcessingIssueCode::InvalidWatermark);
+}
+
 PP_TEST("center crop covers square wide tall odd and unit geometries")
 {
     const auto square =

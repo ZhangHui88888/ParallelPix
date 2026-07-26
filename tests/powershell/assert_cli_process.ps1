@@ -118,13 +118,20 @@ if ($Scenario -in @("sequential", "mixed")) {
         exit 1
     }
     $rows = @(Import-Csv -LiteralPath $expectedCsv)
-    if ($rows.Count -ne 1 -or $rows[0].backend -ne "sequential") {
-        Write-Error "Benchmark CSV did not contain the expected Sequential row."
+    $backends = @($rows | ForEach-Object { $_.backend } | Sort-Object)
+    $expectedBackends = if ($Scenario -eq "mixed" -and $backends -contains "cuda") {
+        @("cuda", "sequential")
+    }
+    else {
+        @("sequential")
+    }
+    if (@(Compare-Object $backends $expectedBackends).Count -ne 0) {
+        Write-Error "Benchmark CSV contained unexpected backend rows."
         exit 1
     }
     $pngFiles = @(Get-ChildItem -LiteralPath $outputDir -Recurse -Filter *.png)
-    if ($pngFiles.Count -ne 1) {
-        Write-Error "Benchmark did not persist exactly one PNG output."
+    if ($pngFiles.Count -ne $expectedBackends.Count) {
+        Write-Error "Benchmark output count did not match successful backends."
         exit 1
     }
 }

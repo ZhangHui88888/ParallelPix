@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import streamlit as st
 
 from .components import render_matrix_summary, render_saved_status
-from .cold_start import ColdStartProbeRunner
 from .i18n import Language, localize_message, tr
 from .models import BenchmarkRequest, RunMode, RunStatus
 from .results import ResultsError, load_results
 from .runners import DemoRunner, SubprocessRunner
 from .sidebar import render_sidebar
 from .styles import apply_styles
-from .trajectory import parse_progress_event, save_trajectory_samples, trajectory_chart
+from .trajectory import parse_progress_event, save_trajectory_samples
 from .validation import validate_request
 from .views import render_results
 
@@ -20,6 +20,7 @@ from .views import render_results
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEMO_RESULTS = Path(__file__).resolve().parent / "assets" / "demo_results.csv"
 MAX_LOG_LINES = 500
+LOG_RENDER_INTERVAL = 0.2
 
 
 def _initialize_state() -> None:
@@ -75,20 +76,23 @@ def _execute(request: BenchmarkRequest, language: Language) -> None:
     with status_box:
         with st.container(height=288, key="live_run_console"):
             log_placeholder = st.empty()
-        trajectory_placeholder = st.empty()
+    last_log_render = 0.0
+
+    def render_console(*, force: bool = False) -> None:
+        nonlocal last_log_render
+        now = time.perf_counter()
+        if logs and (force or now - last_log_render >= LOG_RENDER_INTERVAL):
+            log_placeholder.code("\n".join(logs), language="text")
+            last_log_render = now
 
     def emit_log(line: str) -> None:
-        logs.append(line)
-        del logs[:-MAX_LOG_LINES]
-        log_placeholder.code("\n".join(logs), language="text")
         event = parse_progress_event(line)
         if event is not None:
             st.session_state.trajectory_samples.append(event)
-            figure = trajectory_chart(st.session_state.trajectory_samples, language)
-            if figure is not None:
-                trajectory_placeholder.plotly_chart(
-                    figure, width="stretch", config={"displayModeBar": False}
-                )
+            return
+        logs.append(line)
+        del logs[:-MAX_LOG_LINES]
+        render_console()
 
     runner = (
         DemoRunner(DEMO_RESULTS)
@@ -97,17 +101,8 @@ def _execute(request: BenchmarkRequest, language: Language) -> None:
     )
     try:
         result = runner.run(request, emit_log)
-        if (
-            request.measure_cold_start
-            and request.mode == RunMode.LOCAL_CLI
-            and result.status in {RunStatus.SUCCESS, RunStatus.PARTIAL}
-            and result.run_ids
-        ):
-            measurements = ColdStartProbeRunner(PROJECT_ROOT).run(
-                request, result.run_ids, emit_log
-            )
-            emit_log(f"[COLD START] Recorded {len(measurements)} configuration(s).")
     finally:
+        render_console(force=True)
         activity_marker.empty()
     st.session_state.run_status = result.status.value
     st.session_state.run_message = result.message
