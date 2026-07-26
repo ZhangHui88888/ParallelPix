@@ -1,6 +1,7 @@
 #include "../test_support.hpp"
 #include "io_test_support.hpp"
 
+#include "parallelpix/benchmark/backend.hpp"
 #include "parallelpix/pipeline/pipeline_factory.hpp"
 
 #include "parallelpix/planning/benchmark_plan.hpp"
@@ -20,7 +21,7 @@ using parallelpix::m2::make_benchmark_pipeline;
 using parallelpix::test::io::TemporaryDirectory;
 using parallelpix::test::io::copy_fixture;
 
-PP_TEST("the M7 pipeline runs available backends and skips unavailable ones")
+PP_TEST("the M7 pipeline runs every backend available on this machine")
 {
     TemporaryDirectory temporary;
     const auto input = temporary.path() / L"输入";
@@ -45,20 +46,25 @@ PP_TEST("the M7 pipeline runs available backends and skips unavailable ones")
         CsvMode::Overwrite,
     };
     const auto plan = build_benchmark_plan(request);
+    const bool cuda_available = static_cast<bool>(
+        parallelpix::benchmark::make_cuda_executor());
     const auto pipeline = make_benchmark_pipeline();
 
     const auto summary = pipeline->execute(plan, [](const auto&) {});
 
     PP_REQUIRE_EQ(summary.planned, std::size_t{3});
-    PP_REQUIRE_EQ(summary.failed, std::size_t{0});
-    PP_REQUIRE(summary.succeeded >= std::size_t{1});
-    PP_REQUIRE(summary.succeeded <= std::size_t{2});
     PP_REQUIRE_EQ(
-        summary.succeeded + summary.skipped,
-        summary.planned);
+        summary.succeeded,
+        cuda_available ? std::size_t{3} : std::size_t{2});
+    PP_REQUIRE_EQ(summary.failed, std::size_t{0});
+    PP_REQUIRE_EQ(
+        summary.skipped,
+        cuda_available ? std::size_t{0} : std::size_t{1});
     PP_REQUIRE_EQ(summary.csv_path, std::optional(csv));
     PP_REQUIRE(std::filesystem::is_regular_file(csv));
-    PP_REQUIRE_EQ(summary.issues.size(), summary.skipped);
+    PP_REQUIRE_EQ(
+        summary.issues.size(),
+        cuda_available ? std::size_t{0} : std::size_t{1});
     PP_REQUIRE(!summary.primary_failure.has_value());
 }
 

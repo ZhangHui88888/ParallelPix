@@ -48,6 +48,7 @@ if(NOT PARALLELPIX_CUDA_MODE STREQUAL "OFF")
 endif()
 
 find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgcodecs)
+find_package(OpenMP REQUIRED COMPONENTS CXX)
 
 function(parallelpix_enable_warnings target)
     if(MSVC)
@@ -121,6 +122,22 @@ target_link_libraries(parallelpix_sequential
 )
 parallelpix_enable_warnings(parallelpix_sequential)
 
+add_library(parallelpix_openmp STATIC
+    src/openmp/processor/process_image.cpp
+    src/openmp/processor/processor.cpp
+    src/openmp/scheduling/scheduling.cpp
+)
+target_include_directories(parallelpix_openmp
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(parallelpix_openmp
+    PUBLIC
+        parallelpix_processing
+        OpenMP::OpenMP_CXX
+)
+parallelpix_enable_warnings(parallelpix_openmp)
+
 if(PARALLELPIX_HAS_CUDA)
     add_library(parallelpix_cuda STATIC
         src/cuda/processor/batch_executor.cpp
@@ -159,6 +176,7 @@ if(PARALLELPIX_HAS_CUDA)
 endif()
 
 set(PARALLELPIX_BENCHMARK_SOURCES
+    src/benchmark/runner/openmp_executor.cpp
     src/benchmark/reporting/reporting.cpp
     src/benchmark/runner/experiment.cpp
     src/benchmark/runner/runner.cpp
@@ -190,6 +208,7 @@ target_link_libraries(parallelpix_benchmark
         parallelpix_m2
     PRIVATE
         parallelpix_io
+        parallelpix_openmp
         parallelpix_sequential
 )
 if(PARALLELPIX_HAS_CUDA)
@@ -260,6 +279,25 @@ if(BUILD_TESTING)
     parallelpix_enable_warnings(parallelpix_m4_tests)
 
     add_test(NAME parallelpix_m4_tests COMMAND parallelpix_m4_tests)
+
+    add_executable(parallelpix_m5_tests
+        tests/cpp/test_main.cpp
+        tests/cpp/openmp/test_processor.cpp
+        tests/cpp/openmp/test_scheduling.cpp
+    )
+    target_include_directories(parallelpix_m5_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/sequential
+    )
+    target_link_libraries(parallelpix_m5_tests
+        PRIVATE
+            parallelpix_openmp
+            parallelpix_sequential
+    )
+    parallelpix_enable_warnings(parallelpix_m5_tests)
+
+    add_test(NAME parallelpix_m5_tests COMMAND parallelpix_m5_tests)
 
     add_executable(parallelpix_m7_tests
         tests/cpp/test_main.cpp
@@ -334,7 +372,7 @@ if(BUILD_TESTING)
         add_parallelpix_process_test(parallelpix_help help)
         add_parallelpix_process_test(parallelpix_invalid_command invalid)
         add_parallelpix_process_test(parallelpix_sequential_benchmark sequential)
-        add_parallelpix_process_test(parallelpix_partial_benchmark mixed)
+        add_parallelpix_process_test(parallelpix_mixed_benchmark mixed)
         add_parallelpix_process_test(parallelpix_utf8_arguments utf8)
     endif()
 endif()

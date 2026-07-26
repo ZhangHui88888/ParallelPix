@@ -4,6 +4,7 @@
 #include "parallelpix/planning/benchmark_plan.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -61,6 +62,7 @@ public:
 };
 
 std::unique_ptr<IBackendExecutor> make_sequential_executor();
+std::unique_ptr<IBackendExecutor> make_openmp_executor();
 std::unique_ptr<IBackendExecutor> make_cuda_executor();
 
 }  // namespace parallelpix::benchmark

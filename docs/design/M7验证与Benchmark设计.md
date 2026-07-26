@@ -4,7 +4,7 @@
 
 M7 将 M2 的实验计划、M3 图片 I/O 和 M4～M6 处理后端串成真实 Benchmark。它负责后端生命周期、预热、计时、输出验证、统计与 CSV 报告，不实现像素算法。当前 M7 Core 不修改 M1/M2 的命令或27列 CSV 契约；M8 后续作为独立接口版本受控扩展。
 
-当前 M7 Core 注册 Sequential 执行器，并在 CUDA-enabled 构建中注册 CUDA 执行器。OpenMP 未实现或 CUDA 运行时不可用时，对应实验计为跳过；只要已有后端成功，CLI 返回部分成功并保留有效 CSV。M5 后续只需实现并注册 `IBackendExecutor`。
+当前 M7 固定注册 Sequential/OpenMP，并通过 CUDA 执行器工厂按构建与运行时可用性注册 M6。CUDA 不可用时对应实验计为跳过；只要 CPU 后端存在成功结果，CLI 返回部分成功并保留有效 CSV。
 
 ## 模块与构建边界
 
@@ -14,9 +14,10 @@ parallelpix_m2
 
 parallelpix_benchmark
   ├─ statistics / validation / reporting
-  ├─ runner / SequentialExecutor / CudaExecutor
+  ├─ runner / SequentialExecutor / OpenMpExecutor / CudaExecutor
   ├─ BenchmarkPipeline 工厂
-  └─ 依赖 parallelpix_io、parallelpix_sequential、可选 parallelpix_cuda
+  ├─ 固定依赖 parallelpix_io、parallelpix_sequential、parallelpix_openmp
+  └─ CUDA 可用时依赖 parallelpix_cuda
 ```
 
 `parallelpix_m2` 不再包含具体 Pipeline，避免 M2 与 M7 循环依赖。可执行程序链接 `parallelpix_benchmark`，后者传递 M2 控制层依赖。
@@ -30,7 +31,7 @@ parallelpix_benchmark
 - `IBackendExecutor`：报告后端类型与可用性，并以图片、水印、公共配置和实验项执行一次处理。
 - `BenchmarkRecord`：严格对应 M1 要求的 27 列；不适用值使用空字段。
 
-M7 通过 `run_benchmark_plan()` 接受执行器集合，因此测试和后续 M5/M6 均不需要改动 Controller。
+M7 通过 `run_benchmark_plan()` 接受执行器集合，因此 M5/M6 接入均未改动 Controller。CUDA 执行结果额外报告实际批大小；若因设备网格限制或 OOM 降级与请求值不同，M7 记录警告并把实际值写入既有列。
 
 ### M8 扩展边界
 
@@ -108,5 +109,5 @@ megapixels_per_second =
 | 输入、水印或图片数量无效 | 全部失败，`Input` | 65 |
 | CSV 或图片输出失败 | `Output`，不提供成功 CSV | 73 |
 | Sequential 处理或验证失败 | 当前项失败，依赖项跳过 | 70 或部分成功 |
-| 后端未注册或运行时不可用 | 对应项跳过，`BackendUnavailable` | 有其他成功后端时为 2 |
+| 请求的后端未注册（如关闭 CUDA、无 Toolkit/设备） | 对应项跳过，`BackendUnavailable` | 有 CPU 成功结果时为 2 |
 | 全部项成功 | 提供 CSV | 0 |

@@ -10,7 +10,7 @@
 - OpenCV 4.12.0，仅用于 M3 解码和 PNG 编码。
 - `tests/fixtures/` 中的本地图片和 RGBA 水印。
 - 使用独立 `build/m7`，通过 vcpkg toolchain 配置。
-- OpenMP 尚未实现；CUDA-enabled 测试额外使用 CUDA Toolkit 12.8 和目标 GPU。
+- 历史 M7 Core 测试使用 Sequential 与后端替身完成；M5/M6 真实接线已更新，待统一回归。CUDA-enabled 测试额外使用 CUDA Toolkit 12.8 和目标 GPU。
 
 ## 请求与响应
 
@@ -29,12 +29,14 @@
 | CSV Schema 冲突 | 外部表头 | 拒绝追加且原文件不变 | 与预期一致 | 通过 |
 | 预热与重复 | 2 次预热、5 次正式 | 后端调用严格为 7 次 | 与预期一致 | 通过 |
 | 指标公式 | Sequential 与有效 OpenMP 替身 | 吞吐量、加速比和线程效率关系正确 | 与预期一致 | 通过 |
+| CUDA 记录模型 | CUDA 替身提供阶段时间和较小实际批次 | 27 列不变，阶段值和实际批大小正确 | 待执行 | 待统一执行 |
 | 验证失败记录 | 注入错误 OpenMP 输出 | CSV 保留 false 行，无加速比 | 与预期一致 | 通过 |
 | 基准失败依赖 | Sequential 失败 | 同规模并行配置跳过 | 与预期一致 | 通过 |
 | 后端不可用 | CUDA 运行时不可用替身 | 配置跳过且不调用执行器，已有结果不受影响 | 与预期一致 | 通过 |
 | 输入失败 | 不存在的目录 | 全局 Input 失败，不调用后端 | 与预期一致 | 通过 |
 | 真实 Sequential | Unicode 路径、1 张图片 | 退出 0，生成 1 行 CSV 和 1 张 PNG | 与预期一致 | 通过 |
-| 混合真实进程 | Sequential+OpenMP+CUDA | Sequential/CUDA 成功，OpenMP 跳过，退出 2 | 与预期一致 | 通过 |
+| 混合真实进程（历史 Core） | Sequential+OpenMP+CUDA | Sequential 成功，另两项跳过，退出 2 | 与预期一致 | 通过 |
+| 混合真实进程（M5/M6 接入后） | Sequential+OpenMP+CUDA | 有设备时三项成功/退出 0；否则 CPU 成功、CUDA 跳过/退出 2 | 待执行 | 待统一执行 |
 | M1 兼容 | M7 真实 CSV | `load_results()` 可读取并识别新运行 | 与预期一致 | 通过 |
 
 ## 验证结果
@@ -44,3 +46,4 @@
 - CUDA Release CTest：10/10 通过。
 - M1 Python 回归可读取 Release CLI 生成的真实 CUDA CSV 并绘制 CUDA 图表。
 - 性能自动化不设置固定加速倍数；正式性能结论必须来自 Release 构建。
+- M5/M6 接入后的 M7、真实进程和 M1 回归尚未执行，下一步统一验证。

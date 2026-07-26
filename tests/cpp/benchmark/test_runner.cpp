@@ -32,8 +32,13 @@ using parallelpix::test::io::copy_fixture;
 class CopyExecutor final : public IBackendExecutor
 {
 public:
-    CopyExecutor(Backend backend, bool corrupt)
-        : backend_(backend), corrupt_(corrupt)
+    CopyExecutor(
+        Backend backend,
+        bool corrupt,
+        std::optional<std::uint32_t> effective_cuda_batch_size = std::nullopt)
+        : backend_(backend),
+          corrupt_(corrupt),
+          effective_cuda_batch_size_(effective_cuda_batch_size)
     {
     }
 
@@ -46,7 +51,7 @@ public:
         const std::vector<parallelpix::Image>& images,
         const parallelpix::Watermark&,
         const parallelpix::ProcessingConfig&,
-        const ExperimentSpec&,
+        const ExperimentSpec& experiment,
         const parallelpix::benchmark::ProgressSink&) override
     {
         ++calls;
@@ -58,7 +63,20 @@ public:
         }
         parallelpix::BatchProcessingResult result;
         result.images = std::move(outputs);
-        return {std::move(result), std::nullopt};
+        if (backend_ == Backend::Cuda)
+        {
+            return {
+                std::move(result),
+                parallelpix::benchmark::CudaPhaseTiming{1.0, 2.0, 3.0},
+                effective_cuda_batch_size_.value_or(
+                    experiment.cuda_batch_size.value_or(0)),
+            };
+        }
+        return {
+            std::move(result),
+            std::nullopt,
+            std::nullopt,
+        };
     }
 
     std::size_t calls = 0;
@@ -66,6 +84,7 @@ public:
 private:
     Backend backend_;
     bool corrupt_;
+    std::optional<std::uint32_t> effective_cuda_batch_size_;
 };
 
 class FailingExecutor final : public IBackendExecutor
@@ -91,7 +110,11 @@ public:
             {},
             "Injected Sequential failure.",
         });
-        return {std::move(result), std::nullopt};
+        return {
+            std::move(result),
+            std::nullopt,
+            std::nullopt,
+        };
     }
 
     std::size_t calls = 0;

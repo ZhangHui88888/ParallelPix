@@ -35,6 +35,7 @@ enum class ProcessingIssueCode
     InvalidImage,
     InvalidWatermark,
     WatermarkDoesNotFit,
+    BackendUnavailable,
     BackendFailure,
 };
 

@@ -22,6 +22,7 @@ docs/
 | [M2 CLI Controller与任务编排实施计划.md](./plan/M2%20CLI%20Controller与任务编排实施计划.md) | M2 C++17 控制层、测试与验收实施步骤 |
 | [M3图片数据IO实施计划.md](./plan/M3图片数据IO实施计划.md) | M3 共享图片模型、扫描、解码、输出与验收步骤 |
 | [M4公共处理模型与Sequential实施计划.md](./plan/M4公共处理模型与Sequential实施计划.md) | M4 公共像素语义、单线程后端、集成与验收步骤 |
+| [M5 OpenMP后端实施计划.md](./plan/M5%20OpenMP后端实施计划.md) | M5 多核处理、M7 注册和统一测试安排 |
 | [M6 CUDA后端实施计划.md](./plan/M6%20CUDA后端实施计划.md) | M6 条件构建、GPU 批处理、故障回退、联调与验收步骤 |
 | [M7验证与Benchmark实施计划.md](./plan/M7验证与Benchmark实施计划.md) | M7 验证、计时、统计、真实 Pipeline 与报告实施步骤 |
 | [M8 CPU-GPU混合后端实施计划.md](./plan/M8%20CPU-GPU混合后端实施计划.md) | M8 异构任务划分、并发执行、轨迹、Schema 扩展与性能实验步骤 |
@@ -38,6 +39,7 @@ docs/
 
 | [M3图片数据IO设计.md](./design/M3图片数据IO设计.md) | M3 图片模型、目录扫描、解码、批次与 PNG 输出契约 |
 | [M4公共处理模型与Sequential设计.md](./design/M4公共处理模型与Sequential设计.md) | M4 配置、裁剪、缩放、效果、错误模型与 Sequential 契约 |
+| [M5 OpenMP后端设计.md](./design/M5%20OpenMP后端设计.md) | M5 调度、线程模型、像素一致性与 M7 接入契约 |
 | [M6 CUDA后端设计.md](./design/M6%20CUDA后端设计.md) | M6 构建模式、数据布局、融合 Kernel、计时和显存回退契约 |
 | [M7验证与Benchmark设计.md](./design/M7验证与Benchmark设计.md) | M7 执行器、测量、验证、输出、CSV 和降级契约 |
 | [M8 CPU-GPU混合后端设计.md](./design/M8%20CPU-GPU混合后端设计.md) | M8 OpenMP/CUDA 同批并发、任务比例、合并验证与指标契约 |
@@ -62,5 +64,6 @@ ParallelPix 不包含对外 API、数据库或生产部署。构建与本地运�
 | [M2 CLI Controller与任务编排测试.md](./test/M2%20CLI%20Controller与任务编排测试.md) | M2 参数、矩阵、Controller 与真实进程测试记录 |
 | [M3图片数据IO测试.md](./test/M3图片数据IO测试.md) | M3 目录、解码、水印、批次和 PNG 输出测试记录 |
 | [M4公共处理模型与Sequential测试.md](./test/M4公共处理模型与Sequential测试.md) | M4 几何、像素语义、Sequential 和 M3 集成测试记录 |
+| [M5 OpenMP后端测试.md](./test/M5%20OpenMP后端测试.md) | M5 正确性、调度、进度、Pipeline 和性能执行记录 |
 | [M6 CUDA后端测试.md](./test/M6%20CUDA后端测试.md) | M6 CPU-only/真机 CUDA、故障、Sanitizer、CLI、性能和仪表板测试记录 |
 | [M7验证与Benchmark测试.md](./test/M7验证与Benchmark测试.md) | M7 统计、验证、报告、Runner 和真实进程测试记录 |

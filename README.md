@@ -4,7 +4,7 @@
 
 ## 构建与运行
 
-### C++ CLI、M3/M4/M6 与 M7 Benchmark
+### C++ CLI 与 M2～M7 Benchmark
 
 项目通过 vcpkg manifest 固定 OpenCV 的 JPEG/PNG 最小依赖。先安装或使用 Visual Studio 2022 自带的 vcpkg，并在 Visual Studio 2022 Developer PowerShell 中执行：
 
@@ -17,7 +17,7 @@ ctest --test-dir build/m7 -C Debug --output-on-failure
 .\build\m7\Debug\parallelpix.exe --help
 ```
 
-构建会生成 M2 CLI、M3 图片 I/O、M4 Sequential、M7 Benchmark 静态库及对应测试。默认 `PARALLELPIX_CUDA=AUTO`：检测到 CUDA Toolkit 时同时构建 M6，未检测到时生成 CPU-only 工程。Sequential/CUDA 已接入真实 Pipeline，可执行预热、正式测量、PNG 验证、统计并写入 M1 所需的 27 列 CSV。OpenMP 尚未实现；混合请求会保留 Sequential/CUDA 结果、跳过 OpenMP 并返回部分成功。
+构建会生成 M2 CLI、M3 图片 I/O、M4 Sequential、M5 OpenMP、M7 Benchmark 静态库及对应测试。默认 `PARALLELPIX_CUDA=AUTO`：检测到 CUDA Toolkit 时同时构建 M6 和 `parallelpix_m6_tests`，未检测到时生成 CPU-only 工程。Sequential/OpenMP/CUDA 三种后端均已接入真实 Pipeline，共享预热、正式测量、PNG 验证、统计并写入 M1 所需的 27 列 CSV；CUDA 额外记录 H2D、Kernel、D2H 时间。CUDA 不可用时对应实验计为跳过，CLI 保留 CPU 结果并返回部分成功。
 
 目标 RTX 50 系 Blackwell GPU 使用 CUDA Toolkit 12.8 和架构 120。显式 CUDA 构建示例：
 
@@ -119,10 +119,10 @@ M6 CUDA ───────┴→ M8 Hybrid（计划）──┤
 - **M2 CLI Controller**：按 `cli`、`planning`、`controller`、`pipeline` 四个子模块拆分；实现位于 `src/`，公共接口位于 `include/parallelpix/`。
 - **M3 图片数据 I/O**：已作为独立 `parallelpix_io` 库实现并由 M7 真实 Pipeline 调用。
 - **M4 Sequential**：公共像素语义和单线程后端已实现并注册到 M7。
+- **M5 OpenMP**：图片级优先、行级回退的多核后端已实现并注册到 M7。
 - **M6 CUDA**：已完成条件构建、共享预检、连续批处理、融合 Kernel、显存复用/回退和分阶段计时。
-- **M7 Benchmark Core**：已完成预检、预热、计时、PNG 验证、统计、原子 CSV，以及 Sequential/CUDA 执行器与后端降级。
-- **M5 OpenMP**：目录骨架已就位，待实现并注册到 M7 执行器契约。
-- **M8 CPU-GPU Hybrid**：设计与实施计划已建立；等待 M5 完成后再并发组合 OpenMP/CUDA，不属于当前已实现功能。
+- **M7 Benchmark Core**：已完成三后端预检、预热、计时、PNG 验证、统计、原子 CSV 和后端降级；M5/M6 统一测试待执行。
+- **M8 CPU-GPU Hybrid**：设计与实施计划已建立；等待并发组合 OpenMP/CUDA，不属于当前已实现功能。
 
 ### 当前实际目录
 
@@ -144,7 +144,7 @@ ParallelPix/
 │       ├── common/processing.hpp    # M4～M6 共用配置、几何和像素语义
 │       ├── io/image_io.hpp          # M3 扫描、解码、批次和 PNG 写出接口
 │       ├── sequential/processor.hpp # M4 单线程批处理接口
-│       ├── openmp/                  # M5 OpenMP 后端接口（待实现）
+│       ├── openmp/                  # M5 OpenMP 调度与批处理接口
 │       ├── cuda/processor.hpp       # M6 CUDA 后端公共接口
 │       └── benchmark/               # M7 后端、验证、统计、报告和 Runner 接口
 ├── src/
@@ -157,7 +157,7 @@ ParallelPix/
 │   ├── common/{geometry,resize,effects}/ # M4～M6 共享像素语义
 │   ├── io/{catalog,decode,encode}/ # M3 扫描、解码、批次和 PNG 输出
 │   ├── sequential/processor/       # M4 单线程处理流水线
-│   ├── openmp/{scheduling,processor}/ # M5 调度和并行处理（待实现）
+│   ├── openmp/{scheduling,processor}/ # M5 图片级/行级 OpenMP 并行处理
 │   ├── cuda/{runtime,processor,kernels}/ # M6 运行时、批处理和融合 Kernel
 │   └── benchmark/{runner,validation,reporting,statistics}/ # 已实现的 M7
 ├── tools/
@@ -185,7 +185,7 @@ ParallelPix/
 │   │   ├── common/                  # 共享几何与像素算法测试
 │   │   ├── io/                      # M3 I/O 正常与异常测试
 │   │   ├── sequential/              # M4 基线与 M3 集成测试
-│   │   ├── openmp/                  # M5 并行一致性与线程数测试（待实现）
+│   │   ├── openmp/                  # M5 并行一致性、调度与线程数测试
 │   │   ├── cuda/                    # M6 像素、运行时、显存回退和设备测试
 │   │   ├── benchmark/               # M7 验证、指标、Runner 和 CSV 测试
 │   │   └── test_main.cpp、test_support.hpp # 共享 C++ 测试入口与断言
@@ -207,14 +207,14 @@ ParallelPix/
 | M2 CLI Controller 与任务编排 | `src/{cli,planning,controller,pipeline}/`、`include/parallelpix/{cli,planning,controller,pipeline}/` | `tests/cpp/{cli,planning,controller,pipeline}/`、`tests/powershell/` | 已实现；负责解析、校验、计划、日志和退出码 |
 | M3 图片数据 I/O | `src/io/{catalog,decode,encode}/`、`include/parallelpix/{common,io}/` | `tests/cpp/io/`、`tests/fixtures/{images,watermarks}/` | 已实现并由 M7 Pipeline 调用 |
 | M4 Sequential 基线 | `src/common/{geometry,resize,effects}/`、`src/sequential/processor/`、`include/parallelpix/{common,sequential}/` | `tests/cpp/{common,sequential}/` | 已实现、接入 M7 并作为性能与正确性基准 |
-| M5 OpenMP 后端 | `src/openmp/{scheduling,processor}/`、`include/parallelpix/openmp/` | `tests/cpp/openmp/` | 目录已就位；待实现、未接入构建 |
+| M5 OpenMP 后端 | `src/openmp/{scheduling,processor}/`、`include/parallelpix/openmp/` | `tests/cpp/openmp/` | 已实现并接入 M7；测试代码待统一执行 |
 | M6 CUDA 后端 | `src/cuda/{runtime,processor,kernels}/`、`include/parallelpix/cuda/` | `tests/cpp/cuda/` | 已实现并接入 M7；支持分阶段计时和显存减半重试 |
-| M7 验证与 Benchmark | `src/benchmark/{runner,validation,reporting,statistics}/`、`include/parallelpix/benchmark/` | `tests/cpp/benchmark/`、真实进程测试 | Core 与 CUDA 接入已完成；待 M5 完成三后端闭环 |
+| M7 验证与 Benchmark | `src/benchmark/{runner,validation,reporting,statistics}/`、`include/parallelpix/benchmark/` | `tests/cpp/benchmark/`、真实进程测试 | 三后端代码闭环已完成；待统一回归与性能实验 |
 | M8 CPU-GPU Hybrid | 计划落位 `src/hybrid/`、`include/parallelpix/hybrid/` | 计划新增 `tests/cpp/hybrid/` | 已完成设计；等待 M5 |
 
-### 后续模块的落位约定
+### CUDA 维护约定
 
-实现 M5 时必须在既有目录中落位，不在 `src/cli/`、`src/controller/` 或模块外目录插入业务实现。共享像素语义和批次预检继续放在 `common/`；后端仅调用公共模型并实现各自计算策略，再注册到 M7 `IBackendExecutor`。M5 不得修改既有 CLI 与27列 CSV 契约。M8 作为后续独立接口版本，按其设计受控新增 Hybrid 参数和第28列 `hybrid_cpu_share`，同时保持旧 CSV 可读。
+M5 与 M6 均在既有目录中维护，不在 `src/cli/`、`src/controller/` 或模块外目录插入业务实现。共享像素语义和批次预检继续放在 `common/`；后端仅调用公共模型并实现各自计算策略，再注册到 M7 `IBackendExecutor`。既有 CLI 与 27 列 CSV 契约保持不变。M8 作为后续独立接口版本，按其设计受控新增 Hybrid 参数和第28列 `hybrid_cpu_share`，同时保持旧 CSV 可读。
 
 ## 编码约定
 

@@ -55,6 +55,18 @@ std::string first_processing_issue(const BackendExecution& execution)
         : execution.processing.issues.front().message;
 }
 
+m2::FailureCategory processing_failure_category(
+    const BackendExecution& execution)
+{
+    if (!execution.processing.issues.empty() &&
+        execution.processing.issues.front().code ==
+            ProcessingIssueCode::BackendUnavailable)
+    {
+        return m2::FailureCategory::BackendUnavailable;
+    }
+    return m2::FailureCategory::Processing;
+}
+
 void log_batch_warnings(
     const io::BatchResult& batch,
     const m2::LogSink& log)
@@ -156,7 +168,7 @@ ExperimentOutcome measure_experiment(
         if (!execution.processing.ok())
         {
             return fail(
-                m2::FailureCategory::Processing,
+                processing_failure_category(execution),
                 "Warm-up failed: " + first_processing_issue(execution));
         }
         if (experiment.backend == m2::Backend::Cuda)
@@ -233,7 +245,7 @@ ExperimentOutcome measure_experiment(
         if (!execution.processing.ok())
         {
             return fail(
-                m2::FailureCategory::Processing,
+                processing_failure_category(execution),
                 first_processing_issue(execution));
         }
 

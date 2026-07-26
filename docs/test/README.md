@@ -8,8 +8,9 @@
 | [M2 CLI Controller与任务编排测试.md](./M2%20CLI%20Controller与任务编排测试.md) | M2 CLI Controller 与任务编排 | 已通过 |
 | [M3图片数据IO测试.md](./M3图片数据IO测试.md) | M3 图片数据 I/O | 已通过 |
 | [M4公共处理模型与Sequential测试.md](./M4公共处理模型与Sequential测试.md) | M4 公共处理模型与 Sequential | 已通过 |
-| [M6 CUDA后端测试.md](./M6%20CUDA后端测试.md) | M6 CUDA 后端、显存回退与性能联调 | 已通过 |
-| [M7验证与Benchmark测试.md](./M7验证与Benchmark测试.md) | M7 验证、统计、报告与 Benchmark Core | 已通过 |
+| [M5 OpenMP后端测试.md](./M5%20OpenMP后端测试.md) | M5 OpenMP 多核后端 | 2026-07-27 已执行：单元 6/6 通过，真实运行 15/15 通过；性能扩展受数据集规模限制，部分完成 |
+| [M6 CUDA后端测试.md](./M6%20CUDA后端测试.md) | M6 CUDA 后端、显存回退与性能联调 | 已通过（合并 M5 后待统一回归） |
+| [M7验证与Benchmark测试.md](./M7验证与Benchmark测试.md) | M7 验证、统计、报告与 Benchmark Core | 已通过（合并 M5 后待统一回归） |
 
 ## 模块测试文档模板
 
