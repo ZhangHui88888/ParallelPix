@@ -9,9 +9,13 @@ docs/
 ├── README.md
 ├── plan/      # 项目计划
 ├── design/    # 需求、功能设计与交互流程
+├── presentations/ # 演讲稿与答辩材料
+├── prompts/   # 内容生成提示词
 ├── tech/      # 技术架构与本地构建运行说明
 └── test/      # 正确性、异常与性能实验记录
 ```
+
+英文项目入口见根目录 [README_EN.md](../README_EN.md)。
 
 ## `plan/`
 
@@ -46,11 +50,26 @@ docs/
 
 ParallelPix 不包含对外 API 或数据库，因此不维护 API/数据库设计文档；CLI、CSV 和构建契约统一记录在模块设计与技术架构文档中。
 
+## `prompts/`
+
+| 文档 | 说明 |
+|------|------|
+| [ParallelPix_网页版ChatGPT_PPT生成提示词.md](./prompts/ParallelPix_网页版ChatGPT_PPT生成提示词.md) | 供网页版 ChatGPT 生成中英文两份 20 分钟并行计算答辩 PPT 的完整提示词、附件清单与质量标准 |
+
+## `presentations/`
+
+| 文档 | 说明 |
+|------|------|
+| [ParallelPix项目演讲稿.md](./presentations/ParallelPix项目演讲稿.md) | 13 页中英文精简演讲稿，主体约 9～10 分钟，可配合 Demo 和结果说明扩展到 12～15 分钟 |
+| [ParallelPix代码顺序讲解稿.md](./presentations/ParallelPix代码顺序讲解稿.md) | 按真实运行链组织的代码答辩讲稿，提供完整版、5 分钟精简路线及精确源码行跳转 |
+
 ## `tech/`
 
 | 文档 | 说明 |
 |------|------|
 | [技术架构文档.md](./tech/技术架构文档.md) | 技术选型、分层架构、核心依赖 |
+| [system-architecture-en.md](./tech/system-architecture-en.md) | 《技术架构文档》的完整英文译本，保留原章节、表格、代码块与架构图 |
+| [OpenMP与CUDA并行计算原理及代码详解.md](./tech/OpenMP与CUDA并行计算原理及代码详解.md) | 面向考试与答辩的 OpenMP/CUDA 原理、调度与线程映射、内存流程、源码逐段讲解及中英文问答 |
 
 ParallelPix 不包含对外 API、数据库或生产部署。构建与本地运行说明维护在根目录 [README.md](../README.md)。
 
