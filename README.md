@@ -2,6 +2,8 @@
 
 > 基于 OpenMP 与 CUDA 的电商商品图片并行处理课程项目
 
+中文 | [English](README_EN.md)
+
 ## 构建与运行
 
 ### C++ CLI 与 M2～M7 Benchmark
